@@ -1,0 +1,35 @@
+{
+  "stromligning": {
+    "entity_id": "sensor.stromligning_current_price_vat",
+    "state": "1.45",
+    "attributes": {
+      "prices": [
+        {"start": "2026-05-10T18:00:00+02:00", "end": "2026-05-10T19:00:00+02:00", "price": 3.05},
+        {"start": "2026-05-10T19:00:00+02:00", "end": "2026-05-10T20:00:00+02:00", "price": 3.25},
+        {"start": "2026-05-10T20:00:00+02:00", "end": "2026-05-10T21:00:00+02:00", "price": 2.75}
+      ]
+    }
+  },
+  "nordpool": {
+    "entity_id": "sensor.nordpool_kwh_dk2_dkk_3_10_025",
+    "state": "1.45",
+    "attributes": {
+      "today": [
+        {"start": "2026-05-10T18:00:00+02:00", "value": 3.05},
+        {"start": "2026-05-10T19:00:00+02:00", "value": 3.25},
+        {"start": "2026-05-10T20:00:00+02:00", "value": 2.75}
+      ]
+    }
+  },
+  "tibber": {
+    "entity_id": "sensor.electricity_price_home",
+    "state": "1.45",
+    "attributes": {
+      "today": [
+        {"startsAt": "2026-05-10T18:00:00+02:00", "total": 3.05},
+        {"startsAt": "2026-05-10T19:00:00+02:00", "total": 3.25},
+        {"startsAt": "2026-05-10T20:00:00+02:00", "total": 2.75}
+      ]
+    }
+  }
+}
