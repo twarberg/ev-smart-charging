@@ -383,7 +383,7 @@ async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant)
         await hass.async_block_till_done()
         coordinator = hass.data[DOMAIN][entry.entry_id]
         # Outside planned window — charger should not have been turned on
-        assert coordinator.data.charge_now is False
+        assert not coordinator.data.charge_now
 
         # Register mock service captures after setup so we hold the live lists.
         turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -392,11 +392,46 @@ async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant)
         # Advance to 03:30 — should be in the cheapest 2-slot plan (03:00-05:00)
         frozen.move_to("2026-05-11 03:30:00+02:00")
         await coordinator.async_refresh()
-        assert coordinator.data.charge_now is True
+        assert coordinator.data.charge_now
         assert any(c.data.get("entity_id") == "switch.charger" for c in turn_on_calls)
 
         # Advance past departure — no price data beyond 08:00, so plan has no_data and charger is off
         frozen.move_to("2026-05-11 08:30:00+02:00")
         await coordinator.async_refresh()
-        assert coordinator.data.charge_now is False
+        assert not coordinator.data.charge_now
         assert any(c.data.get("entity_id") == "switch.charger" for c in turn_off_calls)
+
+
+async def test_service_replan_runs(hass: HomeAssistant) -> None:
+    with freeze_time("2026-05-11 03:30:00+02:00"):
+        entry = await _setup_with_soc(hass)
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        before = coordinator.data.last_replan
+        await hass.services.async_call(DOMAIN, "replan", {}, blocking=True)
+        await hass.async_block_till_done()
+        assert coordinator.data.last_replan >= before
+
+
+async def test_service_force_charge_now_overrides_plan(hass: HomeAssistant) -> None:
+    with freeze_time("2026-05-10 23:30:00+02:00"):
+        entry = await _setup_with_soc(hass)
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        assert coordinator.data.charge_now is False
+        await hass.services.async_call(DOMAIN, "force_charge_now", {}, blocking=True)
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        assert coordinator.data.charge_now is True
+
+
+async def test_service_skip_until_blocks_plan(hass: HomeAssistant) -> None:
+    with freeze_time("2026-05-11 03:30:00+02:00"):
+        entry = await _setup_with_soc(hass)
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        until = dt_util.parse_datetime("2026-05-11T05:00:00+02:00")
+        assert until is not None
+        await hass.services.async_call(
+            DOMAIN, "skip_until", {"until": until.isoformat()}, blocking=True
+        )
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        assert coordinator.data.charge_now is False

@@ -1,0 +1,36 @@
+replan:
+  name: Replan
+  description: Recalculate the charging plan now using current conditions.
+  target:
+    entity:
+      integration: smart_ev_charging
+  fields: {}
+
+force_charge_now:
+  name: Force charge now
+  description: Charge immediately, ignoring the price plan, until target SoC or unplug.
+  target:
+    entity:
+      integration: smart_ev_charging
+  fields:
+    duration:
+      name: Maximum duration
+      description: Stop after this duration even if target SoC isn't reached. Optional.
+      required: false
+      selector:
+        duration:
+          enable_day: false
+
+skip_until:
+  name: Skip until
+  description: Don't charge before this datetime, regardless of plan.
+  target:
+    entity:
+      integration: smart_ev_charging
+  fields:
+    until:
+      name: Skip until
+      description: Datetime when normal planning should resume.
+      required: true
+      selector:
+        datetime:
