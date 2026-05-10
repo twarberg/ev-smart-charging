@@ -139,6 +139,13 @@ def test_attribute_not_a_list_returns_empty(fake_hass: _FakeHass) -> None:
     assert src.get_slots() == []
 
 
+def test_attribute_empty_list_returns_empty(fake_hass: _FakeHass) -> None:
+    fake_hass.add_state("sensor.x", "1.0", {"prices": []})
+    src = PriceSource(hass=fake_hass, entity_id="sensor.x",
+                      attr_name="prices", start_field="start", price_field="price")
+    assert src.get_slots() == []
+
+
 def test_malformed_entries_dropped_good_ones_kept(
     fake_hass: _FakeHass, caplog: pytest.LogCaptureFixture
 ) -> None:

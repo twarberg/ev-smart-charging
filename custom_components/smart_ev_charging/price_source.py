@@ -80,10 +80,16 @@ class PriceSource:
         if raw is None:
             self._warn_once("attr_missing", f"attribute {self._attr_name!r} missing")
             return []
-        if not isinstance(raw, list) or not raw:
+        if not isinstance(raw, list):
             self._warn_once(
                 "attr_not_list",
-                f"attribute {self._attr_name!r} is not a non-empty list",
+                f"attribute {self._attr_name!r} is not a list",
+            )
+            return []
+        if not raw:
+            self._warn_once(
+                "attr_empty_list",
+                f"attribute {self._attr_name!r} is an empty list",
             )
             return []
         slots: list[PriceSlot] = []
@@ -92,9 +98,17 @@ class PriceSource:
                 self._warn_once("entry_not_mapping", "entry is not a mapping; skipping")
                 continue
             start = _parse_dt(entry.get(self._start_field))
+            if start is None:
+                self._warn_once(
+                    "entry_bad_start",
+                    "entry has missing or unparseable start; skipping",
+                )
+                continue
             price = entry.get(self._price_field)
-            if start is None or not isinstance(price, (int, float)):
-                self._warn_once("entry_malformed", "entry missing start or price field; skipping")
+            if not isinstance(price, (int, float)) or isinstance(price, bool):
+                self._warn_once(
+                    "entry_bad_price", "entry has missing or non-numeric price; skipping"
+                )
                 continue
             end_raw = entry.get(self._end_field) if self._end_field else None
             end = _parse_dt(end_raw) if end_raw is not None else start + timedelta(hours=1)
