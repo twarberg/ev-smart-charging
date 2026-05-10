@@ -1,0 +1,150 @@
+{
+  "title": "Smart EV-opladning",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart EV-opladning",
+        "description": "Vælg et navn til denne bil. Du kan installere integrationen flere gange for flere biler.",
+        "data": {"name": "Navn"}
+      },
+      "price": {
+        "title": "Priskilde",
+        "description": "Vælg den entitet, der har timepriser i en attribut. Standardværdierne passer til Strømligning. Fundne felter: {peek}",
+        "data": {
+          "price_entity": "Prisentitet",
+          "price_attribute": "Navn på prisattribut",
+          "start_field": "Startfelt",
+          "price_field": "Prisfelt",
+          "end_field": "Slutfelt"
+        }
+      },
+      "charger": {
+        "title": "Lader",
+        "description": "Vælg den kontakt, der tænder/slukker for opladning, og angiv den effektive ladeeffekt.",
+        "data": {
+          "charger_switch": "Laderkontakt",
+          "charger_kw": "Ladeeffekt (kW)"
+        }
+      },
+      "car": {
+        "title": "Bil (valgfrit)",
+        "description": "Alle felter er valgfrie. Spring du et over, oprettes en fallback-entitet i stedet.",
+        "data": {
+          "soc_entity": "Aktuel SoC-sensor",
+          "target_soc_entity": "Mål-SoC-sensor",
+          "charging_status_entity": "Ladningsstatus-sensor",
+          "plug_unplugged_values": "Statusværdier der betyder \"ikke tilsluttet\"",
+          "actively_charging_values": "Statusværdier der betyder \"oplader nu\"",
+          "departure_entity": "Afgangstid-sensor",
+          "battery_kwh": "Batterikapacitet (kWh)"
+        }
+      },
+      "defaults": {
+        "title": "Standardværdier",
+        "description": "Standard-afgangstid og planlægningsadfærd. Kan ændres senere via Konfigurer.",
+        "data": {
+          "default_departure": "Standard-afgangstid",
+          "min_minutes_left_in_hour": "Spring nuværende time over hvis under N min. tilbage",
+          "auto_replan_on_price_update": "Genplanlæg når priser opdateres",
+          "auto_replan_on_soc_change": "Genplanlæg ved enhver SoC-ændring"
+        }
+      }
+    },
+    "error": {
+      "name_empty": "Navn er påkrævet.",
+      "entity_not_found": "Entiteten findes ikke eller er ikke eksponeret.",
+      "attribute_not_found": "Attributten blev ikke fundet på entiteten.",
+      "attribute_not_a_list": "Attributten findes, men er ikke en ikke-tom liste af pris-objekter.",
+      "entries_not_dicts": "Hvert pris-objekt skal være et objekt/dict.",
+      "field_not_found": "Det navngivne felt blev ikke fundet i det første pris-objekt."
+    },
+    "abort": {
+      "already_configured": "En anden konfigureret EV bruger allerede dette navn."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart EV-opladning — indstillinger",
+        "description": "Opdater et felt. Ændringer træder i kraft uden genstart af Home Assistant.",
+        "data": {
+          "price_entity": "Prisentitet",
+          "price_attribute": "Navn på prisattribut",
+          "start_field": "Startfelt",
+          "price_field": "Prisfelt",
+          "end_field": "Slutfelt",
+          "charger_switch": "Laderkontakt",
+          "charger_kw": "Ladeeffekt (kW)",
+          "soc_entity": "Aktuel SoC-sensor",
+          "target_soc_entity": "Mål-SoC-sensor",
+          "charging_status_entity": "Ladningsstatus-sensor",
+          "plug_unplugged_values": "Statusværdier der betyder \"ikke tilsluttet\"",
+          "actively_charging_values": "Statusværdier der betyder \"oplader nu\"",
+          "departure_entity": "Afgangstid-sensor",
+          "battery_kwh": "Batterikapacitet (kWh)",
+          "default_departure": "Standard-afgangstid",
+          "min_minutes_left_in_hour": "Spring nuværende time over hvis under N min. tilbage",
+          "auto_replan_on_price_update": "Genplanlæg når priser opdateres",
+          "auto_replan_on_soc_change": "Genplanlæg ved enhver SoC-ændring"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Entiteten findes ikke eller er ikke eksponeret.",
+      "attribute_not_found": "Attributten blev ikke fundet på entiteten.",
+      "attribute_not_a_list": "Attributten findes, men er ikke en ikke-tom liste af pris-objekter.",
+      "entries_not_dicts": "Hvert pris-objekt skal være et objekt/dict.",
+      "field_not_found": "Det navngivne felt blev ikke fundet i det første pris-objekt."
+    }
+  },
+  "services": {
+    "replan": {
+      "name": "Genplanlæg",
+      "description": "Genberegn ladeplanen nu."
+    },
+    "force_charge_now": {
+      "name": "Tving opladning nu",
+      "description": "Oplad straks, ignorer prisplanen, indtil mål-SoC eller frakobling.",
+      "fields": {
+        "duration": {
+          "name": "Maks. varighed",
+          "description": "Stop efter denne varighed selv hvis mål-SoC ikke er nået. Valgfrit."
+        }
+      }
+    },
+    "skip_until": {
+      "name": "Spring over indtil",
+      "description": "Oplad ikke før dette tidspunkt, uanset planen.",
+      "fields": {
+        "until": {
+          "name": "Spring over indtil",
+          "description": "Tidspunkt hvor normal planlægning genoptages."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "plan_status": {"name": "Planstatus"},
+      "planned_hours": {"name": "Planlagte timer"},
+      "slots_needed": {"name": "Timer behov"},
+      "active_deadline": {"name": "Aktiv deadline"},
+      "effective_departure": {"name": "Effektiv afgangstid"}
+    },
+    "binary_sensor": {
+      "plugged_in": {"name": "Tilsluttet"},
+      "actively_charging": {"name": "Oplader nu"},
+      "charge_now": {"name": "Oplad nu"}
+    },
+    "switch": {
+      "smart_charging_enabled": {"name": "Smart opladning aktiveret"}
+    },
+    "number": {
+      "target_soc": {"name": "Mål-SoC"},
+      "charge_slots_override": {"name": "Manuel timer-override"}
+    },
+    "datetime": {
+      "departure_fallback": {"name": "Afgang (fallback)"}
+    }
+  }
+}
