@@ -120,8 +120,16 @@ charge-window timeline with prices, estimated cost, and action buttons.
 Uses attributes on `sensor.daily_planned_hours` (`hours`, `hour_prices`,
 `estimated_cost`, `cost_unit`).
 
-Replace the device id placeholder once: open Settings → Devices & Services →
-Smart EV Charging → click the device → the URL ends in `…&device=<id>`.
+Two prerequisites:
+
+1. **Device ID.** Open Settings → Devices & Services → Smart EV Charging →
+   click the device → the URL ends in `…&device=<id>`. Paste this into the
+   YAML where it says `REPLACE_WITH_DEVICE_ID`.
+2. **A time helper for the one-off button.** Settings → Devices & Services →
+   Helpers → Create Helper → Date and/or time → "Time only" → name it
+   `EV one-off departure` (entity will be `input_datetime.ev_one_off_departure`).
+   The Set one-off button reads from this helper, so adjust the helper to
+   the desired departure time before pressing the button.
 
 ```yaml
 type: vertical-stack
@@ -134,6 +142,8 @@ cards:
       - entity: sensor.daily_plan_status
       - entity: sensor.daily_active_deadline
       - entity: binary_sensor.daily_charge_now
+      - entity: input_datetime.ev_one_off_departure
+        name: One-off departure (set then press button)
 
   - type: markdown
     content: >-
@@ -179,14 +189,15 @@ cards:
           target:
             device_id: REPLACE_WITH_DEVICE_ID
       - type: button
-        name: One-off departure
+        name: Set one-off
         icon: mdi:clock-edit-outline
         tap_action:
           action: call-service
           service: smart_ev_charging.set_one_off_departure
           target:
             device_id: REPLACE_WITH_DEVICE_ID
-          # No `data:` here — HA opens the service dialog so you pick a time.
+          data:
+            departure_time: "{{ states('input_datetime.ev_one_off_departure') }}"
       - type: button
         name: Clear override
         icon: mdi:close-circle-outline
