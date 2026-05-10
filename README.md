@@ -141,6 +141,10 @@ cards:
       {% set prices = state_attr('sensor.daily_planned_hours', 'hour_prices') or [] %}
       {% set total = state_attr('sensor.daily_planned_hours', 'estimated_cost') %}
       {% set unit = state_attr('sensor.daily_planned_hours', 'cost_unit') or '' %}
+      {% set dep_source = state_attr('sensor.daily_effective_departure', 'source') %}
+      {% set dep_time = states('sensor.daily_effective_departure') %}
+
+      **Departure:** {{ dep_time }}{% if dep_source == 'one_off' %} _(one-off override)_{% endif %}
 
       **Charge window**
 
@@ -174,6 +178,24 @@ cards:
           service: smart_ev_charging.force_charge_now
           target:
             device_id: REPLACE_WITH_DEVICE_ID
+      - type: button
+        name: One-off departure
+        icon: mdi:clock-edit-outline
+        tap_action:
+          action: call-service
+          service: smart_ev_charging.set_one_off_departure
+          target:
+            device_id: REPLACE_WITH_DEVICE_ID
+          # No `data:` here — HA opens the service dialog so you pick a time.
+      - type: button
+        name: Clear override
+        icon: mdi:close-circle-outline
+        tap_action:
+          action: call-service
+          service: smart_ev_charging.set_one_off_departure
+          target:
+            device_id: REPLACE_WITH_DEVICE_ID
+          data: {}
 ```
 
 ## Troubleshooting
