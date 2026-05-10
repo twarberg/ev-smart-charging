@@ -322,3 +322,43 @@ async def test_expected_entities_exist(hass: HomeAssistant) -> None:
     actual = {s.entity_id for s in hass.states.async_all()}
     missing = expected - actual
     assert not missing, f"missing: {missing}"
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_switch_master_disable_turns_charger_off(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.services.async_call(
+        "switch", "turn_off",
+        {"entity_id": "switch.daily_smart_charging_enabled"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now is False
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_fallback_number_created_when_no_soc(hass: HomeAssistant) -> None:
+    _seed_prices(hass)
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=_base_entry_data())
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("number.daily_charge_slots_override") is not None
+    assert hass.states.get("number.daily_target_soc") is not None
+    assert hass.states.get("datetime.daily_departure_fallback") is not None
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_fallback_entities_skipped_when_real_entities_provided(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    await _setup_with_soc(hass)
+    # soc_entity + target_soc_entity + charging_status_entity are configured; departure is not
+    assert hass.states.get("number.daily_charge_slots_override") is None
+    assert hass.states.get("number.daily_target_soc") is None
+    assert hass.states.get("datetime.daily_departure_fallback") is not None
