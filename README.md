@@ -64,7 +64,10 @@ The integration fires these for downstream automations:
 ### Strømligning today + tomorrow joiner
 
 Strømligning splits today and tomorrow into two entities. Build a single combined
-sensor and point Smart EV Charging at it:
+sensor and point Smart EV Charging at it. Strømligning publishes `start` and
+`end` as `datetime` objects, so the template normalizes them to ISO strings
+(otherwise the price source can't read them after HA serializes the template
+state):
 
 ```yaml
 template:
@@ -76,7 +79,15 @@ template:
           prices: >
             {% set today = state_attr('sensor.stromligning_current_price_vat', 'prices') or [] %}
             {% set tomorrow = state_attr('binary_sensor.stromligning_tomorrow_spotprice_vat', 'prices') or [] %}
-            {{ today + tomorrow }}
+            {% set ns = namespace(items=[]) %}
+            {% for p in (today + tomorrow) %}
+              {% set ns.items = ns.items + [{
+                'price': p.price,
+                'start': p.start.isoformat() if p.start is not string else p.start,
+                'end': p.end.isoformat() if p.end is not string else p.end
+              }] %}
+            {% endfor %}
+            {{ ns.items }}
 ```
 
 ### Push notification on a partial plan
