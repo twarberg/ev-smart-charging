@@ -115,7 +115,8 @@ def test_extended_when_now_after_departure(prices: list[PriceSlot]) -> None:
     assert plan.deadline == datetime(2026, 5, 11, 8, 0, tzinfo=CPH)
 
 
-def test_clamps_zero_slots_to_one(prices: list[PriceSlot]) -> None:
+def test_zero_slots_returns_empty_plan(prices: list[PriceSlot]) -> None:
+    """slots_needed=0 means \"no charge needed\" — planner returns empty."""
     inp = PlanInput(
         prices=prices,
         slots_needed=0,
@@ -123,8 +124,20 @@ def test_clamps_zero_slots_to_one(prices: list[PriceSlot]) -> None:
         now=datetime(2026, 5, 10, 18, 0, tzinfo=CPH),
     )
     plan = make_plan(inp)
-    assert len(plan.selected_starts) == 1
+    assert plan.selected_starts == ()
     assert plan.status == "ok"
+    assert plan.window_size > 0
+
+
+def test_negative_slots_clamped_to_zero(prices: list[PriceSlot]) -> None:
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=-5,
+        departure=datetime(2026, 5, 11, 8, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 18, 0, tzinfo=CPH),
+    )
+    plan = make_plan(inp)
+    assert plan.selected_starts == ()
 
 
 def test_sorts_unsorted_prices_defensively(prices: list[PriceSlot]) -> None:

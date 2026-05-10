@@ -111,7 +111,7 @@ class PriceSlot:
 @dataclass(frozen=True)
 class PlanInput:
     prices: list[PriceSlot]              # may be unsorted; planner sorts defensively
-    slots_needed: int                    # planner clamps to max(1, slots_needed)
+    slots_needed: int                    # planner clamps to max(0, slots_needed); 0 = no charge needed
     departure: datetime                  # tz-aware deadline
     now: datetime                        # tz-aware "current time"
     min_minutes_left_in_hour: int = 15

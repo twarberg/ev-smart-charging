@@ -38,7 +38,9 @@ class Plan:
 
 def make_plan(inp: PlanInput) -> Plan:
     """Compute a charging plan. See spec § 5 Layer 1."""
-    slots_needed = max(1, inp.slots_needed)
+    # Defensive non-negative clamp; 0 is a legitimate "no charge needed" signal
+    # the caller can use when SoC is already at or above target.
+    slots_needed = max(0, inp.slots_needed)
     prices = sorted(inp.prices, key=lambda s: s.start)
 
     this_hour_start = inp.now.replace(minute=0, second=0, microsecond=0)

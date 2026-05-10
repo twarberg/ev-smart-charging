@@ -188,7 +188,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if soc is None:
             return self._slots_override
         if soc >= target:
-            return 1
+            return 0
         buffer = 1.05 if target <= 80 else 1.10
         kwh_needed = max(0.0, (target - soc) / 100.0 * battery_kwh)
         hours_raw = kwh_needed / charger_kw * buffer

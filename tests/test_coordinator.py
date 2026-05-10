@@ -455,6 +455,18 @@ async def test_slots_needed_reflects_short_charge(hass: HomeAssistant) -> None:
 
 
 @freeze_time("2026-05-11 02:30:00+02:00")
+async def test_slots_needed_zero_when_soc_at_target(hass: HomeAssistant) -> None:
+    """When SoC ≥ target, no charging is needed and the plan is empty."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass, soc=80.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.slots_needed == 0
+    assert coordinator.data.plan.selected_starts == ()
+    assert coordinator.data.charge_now is False
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
 async def test_slots_needed_uses_override_when_no_soc_entity(hass: HomeAssistant) -> None:
     _seed_prices(hass)
     async_mock_service(hass, "switch", "turn_on")
