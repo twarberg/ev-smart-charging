@@ -128,29 +128,32 @@ Three prerequisites:
 2. **A time helper for the one-off button.** Settings → Devices & Services →
    Helpers → Create Helper → Date and/or time → "Time only" → name it
    `EV one-off departure` (entity will be `input_datetime.ev_one_off_departure`).
-3. **A script** that reads the helper and calls the service. Standard
-   Lovelace button cards don't template `tap_action.data`; a script does.
-   In `configuration.yaml` (or via Settings → Automations & Scenes → Scripts):
+3. **An automation** that applies the override whenever the helper
+   changes. Lovelace button cards don't process Jinja in `tap_action.data`,
+   but automation actions do. With this, you simply edit the time helper
+   from the card and the override is applied — no separate "Set" button.
 
    ```yaml
-   script:
-     ev_apply_one_off_departure:
-       alias: EV — apply one-off departure
-       sequence:
+   automation:
+     - alias: EV — apply one-off departure on helper change
+       trigger:
+         - platform: state
+           entity_id: input_datetime.ev_one_off_departure
+       condition:
+         - condition: template
+           value_template: >-
+             {{ trigger.from_state is not none and
+                trigger.to_state.state not in ('unknown', 'unavailable') }}
+       action:
          - service: smart_ev_charging.set_one_off_departure
            target:
              device_id: REPLACE_WITH_DEVICE_ID
            data:
              departure_time: "{{ states('input_datetime.ev_one_off_departure') }}"
-     ev_clear_one_off_departure:
-       alias: EV — clear one-off departure
-       sequence:
-         - service: smart_ev_charging.set_one_off_departure
-           target:
-             device_id: REPLACE_WITH_DEVICE_ID
    ```
 
-   Reload scripts after adding (Developer Tools → YAML → Reload Scripts).
+   Reload automations after adding (Developer Tools → YAML → Reload
+   Automations).
 
 ```yaml
 type: vertical-stack
@@ -210,17 +213,14 @@ cards:
           target:
             device_id: REPLACE_WITH_DEVICE_ID
       - type: button
-        name: Set one-off
-        icon: mdi:clock-edit-outline
-        tap_action:
-          action: call-service
-          service: script.ev_apply_one_off_departure
-      - type: button
         name: Clear override
         icon: mdi:close-circle-outline
         tap_action:
           action: call-service
-          service: script.ev_clear_one_off_departure
+          service: smart_ev_charging.set_one_off_departure
+          target:
+            device_id: REPLACE_WITH_DEVICE_ID
+          data: {}
 ```
 
 ## Troubleshooting
