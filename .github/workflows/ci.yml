@@ -25,3 +25,17 @@ jobs:
         run: mypy --strict custom_components tests
       - name: Pytest
         run: pytest --cov --cov-report=term-missing
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration

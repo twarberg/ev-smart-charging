@@ -83,7 +83,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}.{entry.entry_id}",
+            name=f"{DOMAIN}.{entry.title}",
             update_interval=timedelta(minutes=HEARTBEAT_MINUTES),
         )
         self.entry = entry
