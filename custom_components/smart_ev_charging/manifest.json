@@ -1,13 +1,13 @@
 {
   "domain": "smart_ev_charging",
   "name": "Smart EV Charging",
-  "version": "0.1.0",
-  "config_flow": true,
-  "documentation": "https://github.com/twarberg/ev-smart-charging",
-  "issue_tracker": "https://github.com/twarberg/ev-smart-charging/issues",
   "codeowners": ["@twarberg"],
-  "iot_class": "calculated",
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/twarberg/ev-smart-charging",
   "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/twarberg/ev-smart-charging/issues",
   "requirements": [],
-  "dependencies": []
+  "version": "0.1.0"
 }

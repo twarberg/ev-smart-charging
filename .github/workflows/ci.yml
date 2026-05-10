@@ -39,3 +39,5 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # brands: deferred until v0.1-public submission to home-assistant/brands.
+          ignore: brands

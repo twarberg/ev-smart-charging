@@ -21,6 +21,8 @@ from .const import (
 )
 from .coordinator import SmartEVCoordinator
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 _REPLAN_SCHEMA = vol.Schema({}, extra=vol.ALLOW_EXTRA)
 _FORCE_SCHEMA = vol.Schema({vol.Optional("duration"): cv.time_period}, extra=vol.ALLOW_EXTRA)
 _SKIP_SCHEMA = vol.Schema({vol.Required("until"): cv.datetime}, extra=vol.ALLOW_EXTRA)
