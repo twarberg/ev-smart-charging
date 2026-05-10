@@ -134,3 +134,61 @@ def test_sorts_unsorted_prices_defensively(prices: list[PriceSlot]) -> None:
     )
     plan = make_plan(inp)
     assert list(plan.selected_starts) == sorted(plan.selected_starts)
+
+
+def test_mid_hour_plug_in_skips_current_hour(prices: list[PriceSlot]) -> None:
+    # at 18:50 with default min_minutes_left=15, current hour (18:00) is skipped
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=2,
+        departure=datetime(2026, 5, 10, 22, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 18, 50, tzinfo=CPH),
+    )
+    plan = make_plan(inp)
+    assert datetime(2026, 5, 10, 18, 0, tzinfo=CPH) not in plan.selected_starts
+    assert plan.window_size == 3  # 19, 20, 21
+
+
+def test_mid_hour_keeps_current_hour_when_threshold_zero(prices: list[PriceSlot]) -> None:
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=2,
+        departure=datetime(2026, 5, 10, 22, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 18, 50, tzinfo=CPH),
+        min_minutes_left_in_hour=0,
+    )
+    plan = make_plan(inp)
+    assert plan.window_size == 4  # 18, 19, 20, 21
+
+
+def test_late_night_plug_in_crosses_midnight(prices: list[PriceSlot]) -> None:
+    # plug in at 23:50, departure 08:00 next day; effective_start rolls to 00:00
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=3,
+        departure=datetime(2026, 5, 11, 8, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 23, 50, tzinfo=CPH),
+    )
+    plan = make_plan(inp)
+    assert plan.status == "ok"
+    assert all(
+        s >= datetime(2026, 5, 11, 0, 0, tzinfo=CPH) for s in plan.selected_starts
+    )
+    expected = {
+        datetime(2026, 5, 11, 2, 0, tzinfo=CPH),
+        datetime(2026, 5, 11, 3, 0, tzinfo=CPH),
+        datetime(2026, 5, 11, 4, 0, tzinfo=CPH),
+    }
+    assert set(plan.selected_starts) == expected
+
+
+def test_filters_past_slots(prices: list[PriceSlot]) -> None:
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=3,
+        departure=datetime(2026, 5, 11, 8, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 18, 0, tzinfo=CPH),
+    )
+    plan = make_plan(inp)
+    cutoff = datetime(2026, 5, 10, 18, 0, tzinfo=CPH)
+    assert all(s >= cutoff for s in plan.selected_starts)
