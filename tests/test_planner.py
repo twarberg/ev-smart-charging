@@ -1,12 +1,15 @@
 """Tests for the pure planner. No HA dependency."""
 from __future__ import annotations
 
+import itertools
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from custom_components.smart_ev_charging.planner import (
     PlanInput,
@@ -229,3 +232,54 @@ def test_mixed_timezones_compare_correctly(prices: list[PriceSlot]) -> None:
     plan = make_plan(inp)
     assert plan.status == "ok"
     assert len(plan.selected_starts) == 3
+
+
+def _build_prices(start_hour: int, count: int, offsets: list[float]) -> list[PriceSlot]:
+    base = datetime(2026, 5, 10, start_hour, 0, tzinfo=CPH)
+    return [
+        PriceSlot(
+            start=base + timedelta(hours=i),
+            end=base + timedelta(hours=i + 1),
+            price=offsets[i],
+        )
+        for i in range(count)
+    ]
+
+
+@given(
+    count=st.integers(min_value=1, max_value=24),
+    slots=st.integers(min_value=1, max_value=12),
+    delta_hours=st.integers(min_value=2, max_value=36),
+    seed=st.integers(min_value=0, max_value=10_000),
+)
+@settings(max_examples=80, deadline=None)
+def test_picker_optimality(count: int, slots: int, delta_hours: int, seed: int) -> None:
+    import random
+
+    rng = random.Random(seed)
+    offsets = [rng.uniform(0.1, 5.0) for _ in range(count)]
+    prices = _build_prices(start_hour=0, count=count, offsets=offsets)
+    departure = datetime(2026, 5, 10, 0, 0, tzinfo=CPH) + timedelta(hours=delta_hours)
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=slots,
+            departure=departure,
+            now=datetime(2026, 5, 10, 0, 0, tzinfo=CPH) - timedelta(minutes=1),
+        )
+    )
+    if plan.status == "no_data":
+        assert plan.selected_starts == ()
+        return
+    assert list(plan.selected_starts) == sorted(plan.selected_starts)
+    window = [
+        p
+        for p in prices
+        if datetime(2026, 5, 10, 0, 0, tzinfo=CPH) <= p.start < plan.deadline
+    ]
+    selected = [p for p in prices if p.start in plan.selected_starts]
+    assert len(selected) == min(slots, len(window))
+    sel_total = sum(s.price for s in selected)
+    for sub in itertools.combinations(window, len(selected)):
+        sub_total = sum(s.price for s in sub)
+        assert sel_total <= sub_total + 1e-9
