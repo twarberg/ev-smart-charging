@@ -55,6 +55,8 @@ def test_picks_three_cheapest_overnight(prices: list[PriceSlot]) -> None:
     }
     assert set(plan.selected_starts) == expected
     assert list(plan.selected_starts) == sorted(plan.selected_starts)
+    # Prices are parallel to starts in chronological order: 02→0.65, 03→0.60, 04→0.62.
+    assert plan.selected_prices == (0.65, 0.60, 0.62)
     assert plan.was_extended is False
     assert plan.deadline == datetime(2026, 5, 11, 8, 0, tzinfo=CPH)
     assert plan.initial_deadline == plan.deadline
@@ -113,6 +115,21 @@ def test_extended_when_now_after_departure(prices: list[PriceSlot]) -> None:
     assert plan.status == "extended"
     assert plan.was_extended is True
     assert plan.deadline == datetime(2026, 5, 11, 8, 0, tzinfo=CPH)
+
+
+def test_selected_prices_parallel_to_starts(prices: list[PriceSlot]) -> None:
+    """selected_prices[i] must equal the price of the slot at selected_starts[i]."""
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=5,
+        departure=datetime(2026, 5, 11, 8, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 20, 0, tzinfo=CPH),
+    )
+    plan = make_plan(inp)
+    assert len(plan.selected_starts) == len(plan.selected_prices) == 5
+    by_start = {s.start: s.price for s in prices}
+    for start, price in zip(plan.selected_starts, plan.selected_prices, strict=True):
+        assert by_start[start] == price
 
 
 def test_zero_slots_returns_empty_plan(prices: list[PriceSlot]) -> None:

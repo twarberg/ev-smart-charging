@@ -76,6 +76,8 @@ class CoordinatorData:
     slots_needed_source: str  # "calculated" or "override"
     effective_departure_time: str  # "HH:MM"
     effective_departure_source: str  # "car" / "helper" / "default"
+    estimated_cost: float | None  # sum(selected_prices) * charger_kw, or None
+    cost_unit: str | None  # currency derived from price entity, e.g. "DKK"
 
 
 class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
@@ -373,6 +375,18 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         else:
             actively_charging = car.actively_charging
 
+        charger_kw = float(self._merged.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW))
+        estimated_cost: float | None = (
+            sum(plan.selected_prices) * charger_kw if plan.selected_prices else None
+        )
+        cost_unit: str | None = None
+        price_state = self.hass.states.get(self._merged[CONF_PRICE_ENTITY])
+        if price_state is not None:
+            raw_unit = price_state.attributes.get("unit_of_measurement")
+            if isinstance(raw_unit, str) and raw_unit:
+                # Strip "/kWh" or " /kWh" so cost is in plain currency.
+                cost_unit = raw_unit.split("/")[0].strip() or None
+
         data = CoordinatorData(
             plan=plan,
             car_state=car,
@@ -386,6 +400,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             slots_needed_source=slots_needed_source,
             effective_departure_time=effective_departure_time,
             effective_departure_source=departure_source,
+            estimated_cost=estimated_cost,
+            cost_unit=cost_unit,
         )
 
         # Only fire plan_updated when something downstream subscribers care about

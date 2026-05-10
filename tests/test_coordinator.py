@@ -41,6 +41,7 @@ def _seed_prices(hass: HomeAssistant) -> None:
         "sensor.fake_prices",
         "1.45",
         {
+            "unit_of_measurement": "DKK/kWh",
             "prices": [
                 {"start": "2026-05-10T22:00:00+02:00", "end": "2026-05-10T23:00:00+02:00", "price": 1.80},
                 {"start": "2026-05-10T23:00:00+02:00", "end": "2026-05-11T00:00:00+02:00", "price": 1.45},
@@ -464,6 +465,22 @@ async def test_slots_needed_zero_when_soc_at_target(hass: HomeAssistant) -> None
     assert coordinator.data.slots_needed == 0
     assert coordinator.data.plan.selected_starts == ()
     assert coordinator.data.charge_now is False
+    assert coordinator.data.estimated_cost is None
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_estimated_cost_uses_charger_kw(hass: HomeAssistant) -> None:
+    """estimated_cost == sum(selected_prices) * charger_kw, in plain currency."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass, soc=30.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    plan = coordinator.data.plan
+    expected = sum(plan.selected_prices) * 11.0
+    assert coordinator.data.estimated_cost is not None
+    assert abs(coordinator.data.estimated_cost - expected) < 1e-9
+    # _seed_prices sets unit_of_measurement="DKK/kWh"; cost_unit strips "/kWh".
+    assert coordinator.data.cost_unit == "DKK"
 
 
 @freeze_time("2026-05-11 02:30:00+02:00")

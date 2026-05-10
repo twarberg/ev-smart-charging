@@ -29,6 +29,7 @@ class PlanInput:
 @dataclass(frozen=True)
 class Plan:
     selected_starts: tuple[datetime, ...] = ()
+    selected_prices: tuple[float, ...] = ()
     deadline: datetime = _SENTINEL_DT
     initial_deadline: datetime = _SENTINEL_DT
     was_extended: bool = False
@@ -61,7 +62,9 @@ def make_plan(inp: PlanInput) -> Plan:
     window = [s for s in prices if effective_start <= s.start < deadline]
     effective_slots = min(slots_needed, len(window))
     cheapest = sorted(window, key=lambda s: s.price)[:effective_slots]
-    selected_starts = tuple(sorted(s.start for s in cheapest))
+    chronological = sorted(cheapest, key=lambda s: s.start)
+    selected_starts = tuple(s.start for s in chronological)
+    selected_prices = tuple(s.price for s in chronological)
 
     if len(window) == 0:
         status: PlanStatus = "no_data"
@@ -74,6 +77,7 @@ def make_plan(inp: PlanInput) -> Plan:
 
     return Plan(
         selected_starts=selected_starts,
+        selected_prices=selected_prices,
         deadline=deadline,
         initial_deadline=inp.departure,
         was_extended=was_extended,

@@ -69,9 +69,13 @@ class PlannedHoursSensor(_Base):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        starts = self.coordinator.data.plan.selected_starts
+        data = self.coordinator.data
+        starts = data.plan.selected_starts
         return {
             "hours": [s.isoformat() for s in starts],
+            "hour_prices": list(data.plan.selected_prices),
+            "estimated_cost": data.estimated_cost,
+            "cost_unit": data.cost_unit,
             "next_charge_start": starts[0].isoformat() if starts else None,
             "next_charge_end": (starts[-1] + timedelta(hours=1)).isoformat() if starts else None,
         }

@@ -111,15 +111,65 @@ automation:
 
 ### Lovelace card
 
+A four-block card built from HA's built-in cards: status + master toggle,
+charge-window timeline with prices, estimated cost, and action buttons.
+Uses attributes on `sensor.daily_planned_hours` (`hours`, `hour_prices`,
+`estimated_cost`, `cost_unit`).
+
+Replace the device id placeholder once: open Settings → Devices & Services →
+Smart EV Charging → click the device → the URL ends in `…&device=<id>`.
+
 ```yaml
-type: entities
+type: vertical-stack
 title: Daily EV
-entities:
-  - entity: switch.daily_smart_charging_enabled
-  - entity: sensor.daily_plan_status
-  - entity: sensor.daily_planned_hours
-  - entity: sensor.daily_active_deadline
-  - entity: binary_sensor.daily_charge_now
+cards:
+  - type: entities
+    entities:
+      - entity: switch.daily_smart_charging_enabled
+        name: Smart charging
+      - entity: sensor.daily_plan_status
+      - entity: sensor.daily_active_deadline
+      - entity: binary_sensor.daily_charge_now
+
+  - type: markdown
+    content: >-
+      {% set hours = state_attr('sensor.daily_planned_hours', 'hours') or [] %}
+      {% set prices = state_attr('sensor.daily_planned_hours', 'hour_prices') or [] %}
+      {% set total = state_attr('sensor.daily_planned_hours', 'estimated_cost') %}
+      {% set unit = state_attr('sensor.daily_planned_hours', 'cost_unit') or '' %}
+
+      **Charge window**
+
+      {% if hours %}
+      | Time | Price/kWh |
+      |---|---:|
+      {% for i in range(hours | length) -%}
+      | {{ as_local(hours[i] | as_datetime).strftime('%H:%M') }} | {{ "%.2f" | format(prices[i]) }} {{ unit }} |
+      {% endfor %}
+
+      **Estimated cost:** {{ "%.2f" | format(total) }} {{ unit }}
+      {% else %}
+      _No charging planned._
+      {% endif %}
+
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Replan
+        icon: mdi:refresh
+        tap_action:
+          action: call-service
+          service: smart_ev_charging.replan
+          target:
+            device_id: REPLACE_WITH_DEVICE_ID
+      - type: button
+        name: Force charge
+        icon: mdi:flash
+        tap_action:
+          action: call-service
+          service: smart_ev_charging.force_charge_now
+          target:
+            device_id: REPLACE_WITH_DEVICE_ID
 ```
 
 ## Troubleshooting
