@@ -209,7 +209,7 @@ Responsibilities:
    5. SoC ≥ target (only evaluated when SoC and target are both known) → `False`. If SoC just crossed target while `charge_now` was `True`, fire `smart_ev_charging_target_reached`. If a `force` override is active, also clear it.
    6. Current `this_hour_start` is in `plan.selected_starts` → `True`.
    7. Else → `False`.
-   On state transitions, call `switch.turn_on` / `switch.turn_off` on the configured `charger_switch` and fire `smart_ev_charging_started` / `_stopped` with `reason ∈ {"plan", "force", "manual", "plan_end", "target_reached", "unplugged", "disabled", "skip", "override_expired"}`. The transition is detected against `self._last_charge_now` to keep events idempotent.
+   On state transitions, call `switch.turn_on` / `switch.turn_off` on the configured `charger_switch` and fire `smart_ev_charging_started` / `_stopped` with `reason ∈ {"plan", "force", "plan_end", "target_reached", "unplugged", "disabled", "skip", "override_expired"}`. The transition is detected against `self._last_charge_now` to keep events idempotent.
 5. **Slots-needed math** (when SoC entity is configured):
    ```
    buffer = 1.05 if target <= 80 else 1.10
@@ -300,7 +300,7 @@ All three target by `device_id` or `entity_id`; the handler resolves the owning 
 | Event | When | Payload |
 |---|---|---|
 | `smart_ev_charging_plan_updated` | Every replan | `entry_id`, `status`, `selected_starts` (ISO list), `deadline` (ISO), `was_extended` |
-| `smart_ev_charging_started` | `charge_now` flips `false → true` | `entry_id`, `reason ∈ {plan, force, manual}` |
+| `smart_ev_charging_started` | `charge_now` flips `false → true` | `entry_id`, `reason ∈ {plan, force}` |
 | `smart_ev_charging_stopped` | `charge_now` flips `true → false` | `entry_id`, `reason ∈ {plan_end, target_reached, unplugged, disabled, skip, override_expired}` |
 | `smart_ev_charging_target_reached` | SoC crosses target while charging | `entry_id`, `final_soc` |
 

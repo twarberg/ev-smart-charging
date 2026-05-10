@@ -71,6 +71,7 @@ class CoordinatorData:
     charge_now: bool
     plan_status_label: str  # "ok" / "partial" / ... / "disabled" / "unplugged"
     debounced_plugged_in: bool
+    actively_charging: bool
     slots_needed: int
     slots_needed_source: str  # "calculated" or "override"
     effective_departure_time: str  # "HH:MM"
@@ -365,6 +366,12 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         slots_needed_source = "calculated" if car.soc_percent is not None else "override"
         effective_departure_time = plan.initial_deadline.strftime("%H:%M")
+        # When no charging-status entity is configured, we can't observe physical
+        # charging state, so we mirror the integration's own intent (charge_now).
+        if self._car_config.charging_status_entity is None:
+            actively_charging = charge_now
+        else:
+            actively_charging = car.actively_charging
 
         data = CoordinatorData(
             plan=plan,
@@ -374,6 +381,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             charge_now=charge_now,
             plan_status_label=status_label,
             debounced_plugged_in=debounced_plugged,
+            actively_charging=actively_charging,
             slots_needed=slots_needed,
             slots_needed_source=slots_needed_source,
             effective_departure_time=effective_departure_time,

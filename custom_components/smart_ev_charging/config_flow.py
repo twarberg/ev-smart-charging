@@ -1,6 +1,7 @@
 """Config + Options flow for Smart EV Charging."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -45,6 +46,8 @@ from .const import (
     DEFAULT_START_FIELD,
     DOMAIN,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 _NM = selector.NumberSelectorMode.BOX
 
@@ -201,6 +204,14 @@ class SmartEVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         if user_input is not None:
             self._data.update(user_input)
+            switch_id = user_input[CONF_CHARGER_SWITCH]
+            switch_state = self.hass.states.get(switch_id)
+            if switch_state is None or switch_state.state == "unavailable":
+                _LOGGER.warning(
+                    "Charger switch %s is currently unavailable; saving anyway. "
+                    "It will start working when the entity becomes available.",
+                    switch_id,
+                )
             return await self.async_step_car()
         return self.async_show_form(step_id="charger", data_schema=_CHARGER_SCHEMA)
 

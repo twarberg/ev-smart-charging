@@ -69,7 +69,7 @@ async def _register_services(hass: HomeAssistant) -> None:
     async def _skip(call: ServiceCall) -> None:
         until: datetime = call.data["until"]
         if until.tzinfo is None:
-            until = until.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            until = dt_util.as_local(until)
         for c in _resolve_coordinators(hass, call):
             c.apply_override("skip", until=until)
 

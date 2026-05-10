@@ -55,8 +55,9 @@ The integration fires these for downstream automations:
 
 - `smart_ev_charging_plan_updated` — every replan.
 - `smart_ev_charging_started` / `smart_ev_charging_stopped` — when `charge_now` flips.
-  `reason` is `plan` / `force` / `manual` / `plan_end` / `target_reached` /
-  `unplugged` / `disabled` / `skip` / `override_expired`.
+  `reason` for `started` is `plan` / `force`. `reason` for `stopped` is
+  `plan_end` / `target_reached` / `unplugged` / `disabled` / `skip` /
+  `override_expired`.
 - `smart_ev_charging_target_reached` — SoC crosses target while charging.
 
 ## Recipes

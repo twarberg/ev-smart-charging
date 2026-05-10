@@ -46,10 +46,7 @@ class ActivelyChargingBinary(_BinaryBase):
 
     @property
     def is_on(self) -> bool:
-        car = self.coordinator.data.car_state
-        if self.coordinator._car_config.charging_status_entity is None:
-            return self.coordinator.data.charge_now
-        return car.actively_charging
+        return self.coordinator.data.actively_charging
 
 
 class ChargeNowBinary(_BinaryBase):
