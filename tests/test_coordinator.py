@@ -302,3 +302,23 @@ async def test_apply_override_skip_requires_until(hass: HomeAssistant) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
     with pytest.raises(ValueError, match="skip"):
         coordinator.apply_override("skip", None)
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_expected_entities_exist(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    await _setup_with_soc(hass)
+    expected = {
+        "sensor.daily_plan_status",
+        "sensor.daily_planned_hours",
+        "sensor.daily_slots_needed",
+        "sensor.daily_active_deadline",
+        "sensor.daily_effective_departure",
+        "binary_sensor.daily_plugged_in",
+        "binary_sensor.daily_actively_charging",
+        "binary_sensor.daily_charge_now",
+    }
+    actual = {s.entity_id for s in hass.states.async_all()}
+    missing = expected - actual
+    assert not missing, f"missing: {missing}"
