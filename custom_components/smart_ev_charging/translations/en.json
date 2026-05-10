@@ -1,0 +1,152 @@
+{
+  "title": "Smart EV Charging",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart EV Charging",
+        "description": "Choose a name for this EV. You can install the integration multiple times for multiple cars.",
+        "data": {
+          "name": "Name"
+        }
+      },
+      "price": {
+        "title": "Price source",
+        "description": "Pick the entity that holds your hourly prices in an attribute. Defaults are tuned for Strømligning. Found fields: {peek}",
+        "data": {
+          "price_entity": "Price entity",
+          "price_attribute": "Price attribute name",
+          "start_field": "Start field",
+          "price_field": "Price field",
+          "end_field": "End field"
+        }
+      },
+      "charger": {
+        "title": "Charger",
+        "description": "Pick the switch that turns charging on/off and set the effective charging power.",
+        "data": {
+          "charger_switch": "Charger switch",
+          "charger_kw": "Charging power (kW)"
+        }
+      },
+      "car": {
+        "title": "Car (optional)",
+        "description": "All fields are optional. Skipping any of them creates a fallback entity instead.",
+        "data": {
+          "soc_entity": "Current SoC sensor",
+          "target_soc_entity": "Target SoC sensor",
+          "charging_status_entity": "Charging status sensor",
+          "plug_unplugged_values": "Status values that mean unplugged",
+          "actively_charging_values": "Status values that mean actively charging",
+          "departure_entity": "Departure-time sensor",
+          "battery_kwh": "Battery capacity (kWh)"
+        }
+      },
+      "defaults": {
+        "title": "Defaults",
+        "description": "Default departure time and planning behavior. Editable later via Configure.",
+        "data": {
+          "default_departure": "Default departure time",
+          "min_minutes_left_in_hour": "Skip current hour if less than N minutes remain",
+          "auto_replan_on_price_update": "Replan when prices update",
+          "auto_replan_on_soc_change": "Replan on every SoC change"
+        }
+      }
+    },
+    "error": {
+      "name_empty": "Name is required.",
+      "entity_not_found": "Entity does not exist or is not exposed.",
+      "attribute_not_found": "The attribute was not found on the entity.",
+      "attribute_not_a_list": "The attribute exists but isn't a non-empty list of price entries.",
+      "entries_not_dicts": "Each price entry must be an object/dict.",
+      "field_not_found": "The named field wasn't found in the first price entry."
+    },
+    "abort": {
+      "already_configured": "Another configured EV already uses this name."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart EV Charging — settings",
+        "description": "Update any field. Changes apply on submit without restarting Home Assistant.",
+        "data": {
+          "price_entity": "Price entity",
+          "price_attribute": "Price attribute name",
+          "start_field": "Start field",
+          "price_field": "Price field",
+          "end_field": "End field",
+          "charger_switch": "Charger switch",
+          "charger_kw": "Charging power (kW)",
+          "soc_entity": "Current SoC sensor",
+          "target_soc_entity": "Target SoC sensor",
+          "charging_status_entity": "Charging status sensor",
+          "plug_unplugged_values": "Status values that mean unplugged",
+          "actively_charging_values": "Status values that mean actively charging",
+          "departure_entity": "Departure-time sensor",
+          "battery_kwh": "Battery capacity (kWh)",
+          "default_departure": "Default departure time",
+          "min_minutes_left_in_hour": "Skip current hour if less than N minutes remain",
+          "auto_replan_on_price_update": "Replan when prices update",
+          "auto_replan_on_soc_change": "Replan on every SoC change"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Entity does not exist or is not exposed.",
+      "attribute_not_found": "The attribute was not found on the entity.",
+      "attribute_not_a_list": "The attribute exists but isn't a non-empty list of price entries.",
+      "entries_not_dicts": "Each price entry must be an object/dict.",
+      "field_not_found": "The named field wasn't found in the first price entry."
+    }
+  },
+  "services": {
+    "replan": {
+      "name": "Replan",
+      "description": "Recalculate the charging plan now."
+    },
+    "force_charge_now": {
+      "name": "Force charge now",
+      "description": "Charge immediately, ignoring the price plan, until target SoC or unplug.",
+      "fields": {
+        "duration": {
+          "name": "Maximum duration",
+          "description": "Stop after this duration even if target SoC isn't reached. Optional."
+        }
+      }
+    },
+    "skip_until": {
+      "name": "Skip until",
+      "description": "Don't charge before this time, regardless of plan.",
+      "fields": {
+        "until": {
+          "name": "Skip until",
+          "description": "Datetime when normal planning should resume."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "plan_status": {"name": "Plan status"},
+      "planned_hours": {"name": "Planned hours"},
+      "slots_needed": {"name": "Slots needed"},
+      "active_deadline": {"name": "Active deadline"},
+      "effective_departure": {"name": "Effective departure"}
+    },
+    "binary_sensor": {
+      "plugged_in": {"name": "Plugged in"},
+      "actively_charging": {"name": "Actively charging"},
+      "charge_now": {"name": "Charge now"}
+    },
+    "switch": {
+      "smart_charging_enabled": {"name": "Smart charging enabled"}
+    },
+    "number": {
+      "target_soc": {"name": "Target SoC"},
+      "charge_slots_override": {"name": "Charge slots override"}
+    },
+    "datetime": {
+      "departure_fallback": {"name": "Departure (fallback)"}
+    }
+  }
+}
