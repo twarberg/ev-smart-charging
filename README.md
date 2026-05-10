@@ -167,7 +167,7 @@ cards:
       - entity: sensor.daily_active_deadline
       - entity: binary_sensor.daily_charge_now
       - entity: input_datetime.ev_one_off_departure
-        name: One-off departure (set then press button)
+        name: One-off departure (changes apply automatically)
 
   - type: markdown
     content: >-
