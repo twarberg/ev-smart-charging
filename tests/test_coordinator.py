@@ -6,6 +6,7 @@ from typing import Any
 from freezegun import freeze_time
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 from custom_components.smart_ev_charging.const import (
@@ -362,3 +363,40 @@ async def test_fallback_entities_skipped_when_real_entities_provided(hass: HomeA
     assert hass.states.get("number.daily_charge_slots_override") is None
     assert hass.states.get("number.daily_target_soc") is None
     assert hass.states.get("datetime.daily_departure_fallback") is not None
+
+
+async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant) -> None:
+    with freeze_time("2026-05-10 23:30:00+02:00") as frozen:
+        _seed_prices(hass)
+        hass.states.async_set("sensor.car_soc", "30")
+        hass.states.async_set("sensor.car_target", "80")
+        hass.states.async_set("sensor.car_status", "0")
+        data = _base_entry_data()
+        data["soc_entity"] = "sensor.car_soc"
+        data["target_soc_entity"] = "sensor.car_target"
+        data["charging_status_entity"] = "sensor.car_status"
+        data["plug_unplugged_values"] = ["3"]
+        data["actively_charging_values"] = ["0"]
+        entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        # Outside planned window — charger should not have been turned on
+        assert coordinator.data.charge_now is False
+
+        # Register mock service captures after setup so we hold the live lists.
+        turn_on_calls = async_mock_service(hass, "switch", "turn_on")
+        turn_off_calls = async_mock_service(hass, "switch", "turn_off")
+
+        # Advance to 03:30 — should be in the cheapest 2-slot plan (03:00-05:00)
+        frozen.move_to("2026-05-11 03:30:00+02:00")
+        await coordinator.async_refresh()
+        assert coordinator.data.charge_now is True
+        assert any(c.data.get("entity_id") == "switch.charger" for c in turn_on_calls)
+
+        # Advance past departure — no price data beyond 08:00, so plan has no_data and charger is off
+        frozen.move_to("2026-05-11 08:30:00+02:00")
+        await coordinator.async_refresh()
+        assert coordinator.data.charge_now is False
+        assert any(c.data.get("entity_id") == "switch.charger" for c in turn_off_calls)
