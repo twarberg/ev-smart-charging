@@ -130,3 +130,39 @@ async def test_charger_step_advances_to_car(hass: HomeAssistant) -> None:
         CONF_CHARGER_KW: 11.0,
     })
     assert r["step_id"] == "car"
+
+
+async def test_full_happy_path_creates_entry(hass: HomeAssistant) -> None:
+    await _seed_price_entity(hass)
+    await _seed_charger_switch(hass)
+    r = await _start_user_step(hass)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {CONF_NAME: "Daily"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        CONF_PRICE_ENTITY: "sensor.fake_prices",
+        CONF_PRICE_ATTRIBUTE: "prices",
+        CONF_START_FIELD: "start",
+        CONF_PRICE_FIELD: "price",
+    })
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        CONF_CHARGER_SWITCH: "switch.charger",
+        CONF_CHARGER_KW: 11.0,
+    })
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {
+        "default_departure": "08:00:00",
+    })
+    assert r["type"] == FlowResultType.CREATE_ENTRY
+    assert r["title"] == "Daily"
+    assert r["data"][CONF_PRICE_ENTITY] == "sensor.fake_prices"
+
+
+async def test_duplicate_name_aborts(hass: HomeAssistant) -> None:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    MockConfigEntry(
+        domain=DOMAIN, title="Daily", data={CONF_NAME: "Daily"}
+    ).add_to_hass(hass)
+    r = await _start_user_step(hass)
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {CONF_NAME: "daily"})
+    assert r["type"] == FlowResultType.ABORT
+    assert r["reason"] == "already_configured"

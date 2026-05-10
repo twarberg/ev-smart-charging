@@ -12,16 +12,34 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_ACTIVELY_CHARGING_VALUES,
+    CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
+    CONF_AUTO_REPLAN_ON_SOC_CHANGE,
+    CONF_BATTERY_KWH,
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
+    CONF_CHARGING_STATUS_ENTITY,
+    CONF_DEFAULT_DEPARTURE,
+    CONF_DEPARTURE_ENTITY,
     CONF_END_FIELD,
+    CONF_MIN_MINUTES_LEFT_IN_HOUR,
+    CONF_PLUG_UNPLUGGED_VALUES,
     CONF_PRICE_ATTRIBUTE,
     CONF_PRICE_ENTITY,
     CONF_PRICE_FIELD,
+    CONF_SOC_ENTITY,
     CONF_START_FIELD,
+    CONF_TARGET_SOC_ENTITY,
+    DEFAULT_ACTIVELY_CHARGING_VALUES,
+    DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE,
+    DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE,
+    DEFAULT_BATTERY_KWH,
     DEFAULT_CHARGER_KW,
+    DEFAULT_DEPARTURE_TIME,
     DEFAULT_END_FIELD,
+    DEFAULT_MIN_MINUTES_LEFT,
     DEFAULT_NAME,
+    DEFAULT_PLUG_UNPLUGGED_VALUES,
     DEFAULT_PRICE_ATTRIBUTE,
     DEFAULT_PRICE_FIELD,
     DEFAULT_START_FIELD,
@@ -93,6 +111,54 @@ _CHARGER_SCHEMA = vol.Schema(
 )
 
 
+_CAR_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_SOC_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_TARGET_SOC_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "number"])
+        ),
+        vol.Optional(CONF_CHARGING_STATUS_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=["sensor", "binary_sensor"])
+        ),
+        vol.Optional(
+            CONF_PLUG_UNPLUGGED_VALUES, default=DEFAULT_PLUG_UNPLUGGED_VALUES
+        ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+        vol.Optional(
+            CONF_ACTIVELY_CHARGING_VALUES, default=DEFAULT_ACTIVELY_CHARGING_VALUES
+        ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+        vol.Optional(CONF_DEPARTURE_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig()
+        ),
+        vol.Optional(CONF_BATTERY_KWH, default=DEFAULT_BATTERY_KWH): (
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=200, step=0.1, mode=_NM)
+            )
+        ),
+    }
+)
+
+_DEFAULTS_SCHEMA = vol.Schema(
+    {
+        vol.Required(
+            CONF_DEFAULT_DEPARTURE, default=DEFAULT_DEPARTURE_TIME
+        ): selector.TimeSelector(),
+        vol.Optional(
+            CONF_MIN_MINUTES_LEFT_IN_HOUR, default=DEFAULT_MIN_MINUTES_LEFT
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=59, step=1, mode=_NM)
+        ),
+        vol.Optional(
+            CONF_AUTO_REPLAN_ON_PRICE_UPDATE, default=DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_AUTO_REPLAN_ON_SOC_CHANGE, default=DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE
+        ): selector.BooleanSelector(),
+    }
+)
+
+
 class SmartEVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -144,7 +210,7 @@ class SmartEVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._data.update(user_input)
             return await self.async_step_defaults()
-        return self.async_show_form(step_id="car", data_schema=vol.Schema({}))
+        return self.async_show_form(step_id="car", data_schema=_CAR_SCHEMA)
 
     async def async_step_defaults(
         self, user_input: dict[str, Any] | None = None
@@ -152,7 +218,7 @@ class SmartEVConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._data.update(user_input)
             return self.async_create_entry(title=self._data[CONF_NAME], data=self._data)
-        return self.async_show_form(step_id="defaults", data_schema=vol.Schema({}))
+        return self.async_show_form(step_id="defaults", data_schema=_DEFAULTS_SCHEMA)
 
     @staticmethod
     @callback
