@@ -108,19 +108,11 @@ class ActiveDeadlineSensor(_Base):
 class EffectiveDepartureSensor(_Base):
     @property
     def native_value(self) -> str:
-        deadline = self.coordinator.data.plan.deadline
-        return deadline.strftime("%H:%M")
+        return self.coordinator.data.effective_departure_time
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        car = self.coordinator.data.car_state
-        if car.departure is not None:
-            source = "car"
-        elif self.coordinator._departure_fallback is not None:
-            source = "helper"
-        else:
-            source = "default"
-        return {"source": source}
+        return {"source": self.coordinator.data.effective_departure_source}
 
 
 async def async_setup_entry(

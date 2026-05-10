@@ -114,7 +114,7 @@ _CHARGER_SCHEMA = vol.Schema(
 _CAR_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_SOC_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor")
+            selector.EntitySelectorConfig(domain="sensor", device_class="battery")
         ),
         vol.Optional(CONF_TARGET_SOC_ENTITY): selector.EntitySelector(
             selector.EntitySelectorConfig(domain=["sensor", "number"])
@@ -289,7 +289,7 @@ class SmartEVOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_SOC_ENTITY, default=d(CONF_SOC_ENTITY, vol.UNDEFINED)
                 ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain="sensor", device_class="battery")
                 ),
                 vol.Optional(
                     CONF_TARGET_SOC_ENTITY,

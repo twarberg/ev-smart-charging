@@ -466,3 +466,74 @@ async def test_slots_needed_uses_override_when_no_soc_entity(hass: HomeAssistant
     coordinator = hass.data[DOMAIN][entry.entry_id]
     assert coordinator.data.slots_needed_source == "override"
     assert coordinator.data.slots_needed == 3  # default _slots_override
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_effective_departure_uses_initial_deadline_and_default_source(
+    hass: HomeAssistant,
+) -> None:
+    """Effective departure shows the configured time (08:00) with source=default."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.effective_departure_time == "08:00"
+    assert coordinator.data.effective_departure_source == "default"
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_plan_updated_event_deduped_when_no_change(hass: HomeAssistant) -> None:
+    """Heartbeat or noop refresh shouldn't fire plan_updated again with the same payload."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    fired: list[Any] = []
+    hass.bus.async_listen(EVENT_PLAN_UPDATED, fired.append)
+
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    initial_count = len([e for e in fired if e.event_type == EVENT_PLAN_UPDATED])
+    assert initial_count >= 1
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert (
+        len([e for e in fired if e.event_type == EVENT_PLAN_UPDATED]) == initial_count
+    ), "second refresh with no change must not fire plan_updated again"
+
+
+async def test_soc_entity_listener_skipped_when_auto_replan_off(hass: HomeAssistant) -> None:
+    """auto_replan_on_soc_change=False must NOT attach a listener to soc_entity.
+
+    Verified by snapshotting last_replan, ticking the SoC entity, and confirming
+    last_replan is unchanged (no automatic refresh occurred).
+    """
+    from custom_components.smart_ev_charging.const import CONF_AUTO_REPLAN_ON_SOC_CHANGE
+
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "30")
+    hass.states.async_set("sensor.car_target", "80")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data.update(
+        {
+            "soc_entity": "sensor.car_soc",
+            "target_soc_entity": "sensor.car_target",
+            "charging_status_entity": "sensor.car_status",
+            "plug_unplugged_values": ["3"],
+            "actively_charging_values": ["0"],
+            CONF_AUTO_REPLAN_ON_SOC_CHANGE: False,
+        }
+    )
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    last_replan_before = coordinator.data.last_replan
+    hass.states.async_set("sensor.car_soc", "31")
+    await hass.async_block_till_done()
+    # SoC tick must NOT trigger an automatic refresh (last_replan unchanged).
+    assert coordinator.data.last_replan == last_replan_before

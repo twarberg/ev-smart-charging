@@ -17,6 +17,8 @@ from homeassistant.util import dt as dt_util
 from .car_state import CarState, CarStateConfig, read_car_state
 from .const import (
     CONF_ACTIVELY_CHARGING_VALUES,
+    CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
+    CONF_AUTO_REPLAN_ON_SOC_CHANGE,
     CONF_BATTERY_KWH,
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
@@ -33,6 +35,8 @@ from .const import (
     CONF_START_FIELD,
     CONF_TARGET_SOC_ENTITY,
     DEFAULT_ACTIVELY_CHARGING_VALUES,
+    DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE,
+    DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE,
     DEFAULT_BATTERY_KWH,
     DEFAULT_CHARGER_KW,
     DEFAULT_DEPARTURE_TIME,
@@ -69,6 +73,8 @@ class CoordinatorData:
     debounced_plugged_in: bool
     slots_needed: int
     slots_needed_source: str  # "calculated" or "override"
+    effective_departure_time: str  # "HH:MM"
+    effective_departure_source: str  # "car" / "helper" / "default"
 
 
 class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
@@ -111,13 +117,22 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._last_charge_now: bool = False
 
     async def async_setup(self) -> None:
-        ids = [
-            self._merged.get(CONF_PRICE_ENTITY),
-            self._merged.get(CONF_SOC_ENTITY),
-            self._merged.get(CONF_TARGET_SOC_ENTITY),
-            self._merged.get(CONF_CHARGING_STATUS_ENTITY),
-            self._merged.get(CONF_DEPARTURE_ENTITY),
-        ]
+        replan_on_price = bool(
+            self._merged.get(CONF_AUTO_REPLAN_ON_PRICE_UPDATE, DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE)
+        )
+        replan_on_soc = bool(
+            self._merged.get(CONF_AUTO_REPLAN_ON_SOC_CHANGE, DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE)
+        )
+        ids: list[str | None] = []
+        if replan_on_price:
+            ids.append(self._merged.get(CONF_PRICE_ENTITY))
+        if replan_on_soc:
+            ids.append(self._merged.get(CONF_SOC_ENTITY))
+        # Target SoC, charging status, and departure are control inputs —
+        # changes there should always trigger a replan regardless of flags.
+        ids.append(self._merged.get(CONF_TARGET_SOC_ENTITY))
+        ids.append(self._merged.get(CONF_CHARGING_STATUS_ENTITY))
+        ids.append(self._merged.get(CONF_DEPARTURE_ENTITY))
         watch = [e for e in ids if e]
         if watch:
             self._unsub.append(
@@ -317,7 +332,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         debounced_plugged = self._debounce_plug(car)
         prices = self._price_source.get_slots()
         slots_needed = self._slots_needed(car)
-        deadline, _src = self._resolve_departure(car, now)
+        deadline, departure_source = self._resolve_departure(car, now)
         plan = make_plan(
             PlanInput(
                 prices=prices,
@@ -349,6 +364,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             status_label = "unplugged"
 
         slots_needed_source = "calculated" if car.soc_percent is not None else "override"
+        effective_departure_time = plan.initial_deadline.strftime("%H:%M")
 
         data = CoordinatorData(
             plan=plan,
@@ -360,16 +376,29 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             debounced_plugged_in=debounced_plugged,
             slots_needed=slots_needed,
             slots_needed_source=slots_needed_source,
+            effective_departure_time=effective_departure_time,
+            effective_departure_source=departure_source,
         )
 
-        self.hass.bus.async_fire(
-            EVENT_PLAN_UPDATED,
-            {
-                "entry_id": self.entry.entry_id,
-                "status": plan.status,
-                "selected_starts": [s.isoformat() for s in plan.selected_starts],
-                "deadline": plan.deadline.isoformat(),
-                "was_extended": plan.was_extended,
-            },
+        # Only fire plan_updated when something downstream subscribers care about
+        # actually changed. The 30-minute heartbeat would otherwise spam 48 events per day.
+        prev = self.data
+        plan_changed = (
+            prev is None
+            or prev.plan.status != plan.status
+            or prev.plan.was_extended != plan.was_extended
+            or prev.plan.deadline != plan.deadline
+            or prev.plan.selected_starts != plan.selected_starts
         )
+        if plan_changed:
+            self.hass.bus.async_fire(
+                EVENT_PLAN_UPDATED,
+                {
+                    "entry_id": self.entry.entry_id,
+                    "status": plan.status,
+                    "selected_starts": [s.isoformat() for s in plan.selected_starts],
+                    "deadline": plan.deadline.isoformat(),
+                    "was_extended": plan.was_extended,
+                },
+            )
         return data
