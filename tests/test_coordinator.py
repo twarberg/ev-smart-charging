@@ -83,6 +83,8 @@ async def test_coordinator_unload_cancels_listeners(hass: HomeAssistant) -> None
 
 
 async def _setup_with_soc(hass: HomeAssistant, soc: float = 30.0, target: float = 80.0) -> Any:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
     _seed_prices(hass)
     hass.states.async_set("sensor.car_soc", str(soc))
     hass.states.async_set("sensor.car_target", str(target))
@@ -100,10 +102,26 @@ async def _setup_with_soc(hass: HomeAssistant, soc: float = 30.0, target: float 
     return entry
 
 
-@freeze_time("2026-05-11 02:30:00+02:00")
+@freeze_time("2026-05-11 03:30:00+02:00")
 async def test_charge_now_on_during_planned_hour(hass: HomeAssistant) -> None:
+    # _setup_with_soc registers mock switch services and returns the entry.
+    # We capture the turn_on mock before setup so the same list is populated.
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
-    entry = await _setup_with_soc(hass)
+    async_mock_service(hass, "switch", "turn_off")
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "30")
+    hass.states.async_set("sensor.car_target", "80")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data["soc_entity"] = "sensor.car_soc"
+    data["target_soc_entity"] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
     coordinator = hass.data[DOMAIN][entry.entry_id]
     assert coordinator.data.charge_now is True
     assert any(c.data.get("entity_id") == "switch.charger" for c in turn_on_calls)
@@ -139,8 +157,10 @@ async def test_unplugged_forces_off(hass: HomeAssistant) -> None:
     assert coordinator.data.plan_status_label == "unplugged"
 
 
-@freeze_time("2026-05-11 02:30:00+02:00")
+@freeze_time("2026-05-10 23:30:00+02:00")
 async def test_force_override_overrides_plan(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
     _seed_prices(hass)
     hass.states.async_set("sensor.car_soc", "30")
     hass.states.async_set("sensor.car_target", "80")
@@ -160,14 +180,11 @@ async def test_force_override_overrides_plan(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # set "now" to 23:30 — not in plan
-    with freeze_time("2026-05-10 23:30:00+02:00"):
-        await coordinator.async_refresh()
-        assert coordinator.data.charge_now is False
-        coordinator.apply_override("force", until=None)
-        await hass.async_block_till_done()
-        await coordinator.async_refresh()
-        assert coordinator.data.charge_now is True
+    # Now is 23:30 — not in plan
+    assert coordinator.data.charge_now is False
+    coordinator.apply_override("force", until=None)
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now is True
 
 
 @freeze_time("2026-05-11 02:30:00+02:00")
