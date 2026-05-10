@@ -435,3 +435,34 @@ async def test_service_skip_until_blocks_plan(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
         await coordinator.async_refresh()
         assert coordinator.data.charge_now is False
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_slots_needed_reflects_short_charge(hass: HomeAssistant) -> None:
+    """Sensor reads coordinator.data.slots_needed (calculated), not window_size.
+
+    SoC=75 → target=80, 31.2 kWh battery, 11 kW charger:
+    kwh_needed = 5%/100 * 31.2 = 1.56 kWh
+    hours_raw  = 1.56 / 11 * 1.05 = 0.149 h
+    slots_needed = max(1, ceil(0.149)) = 1
+    """
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass, soc=75.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.slots_needed == 1
+    assert coordinator.data.slots_needed_source == "calculated"
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_slots_needed_uses_override_when_no_soc_entity(hass: HomeAssistant) -> None:
+    _seed_prices(hass)
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=_base_entry_data())
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.slots_needed_source == "override"
+    assert coordinator.data.slots_needed == 3  # default _slots_override

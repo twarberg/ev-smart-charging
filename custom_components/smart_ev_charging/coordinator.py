@@ -67,6 +67,8 @@ class CoordinatorData:
     charge_now: bool
     plan_status_label: str  # "ok" / "partial" / ... / "disabled" / "unplugged"
     debounced_plugged_in: bool
+    slots_needed: int
+    slots_needed_source: str  # "calculated" or "override"
 
 
 class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
@@ -346,6 +348,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         elif not debounced_plugged:
             status_label = "unplugged"
 
+        slots_needed_source = "calculated" if car.soc_percent is not None else "override"
+
         data = CoordinatorData(
             plan=plan,
             car_state=car,
@@ -354,6 +358,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             charge_now=charge_now,
             plan_status_label=status_label,
             debounced_plugged_in=debounced_plugged,
+            slots_needed=slots_needed,
+            slots_needed_source=slots_needed_source,
         )
 
         self.hass.bus.async_fire(

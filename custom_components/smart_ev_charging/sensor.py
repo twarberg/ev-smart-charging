@@ -82,14 +82,11 @@ class SlotsNeededSensor(_Base):
 
     @property
     def native_value(self) -> int:
-        plan = self.coordinator.data.plan
-        return max(1, plan.window_size if plan.window_size > 0 else len(plan.selected_starts))
+        return self.coordinator.data.slots_needed
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        car = self.coordinator.data.car_state
-        source = "calculated" if car.soc_percent is not None else "override"
-        return {"source": source}
+        return {"source": self.coordinator.data.slots_needed_source}
 
 
 class ActiveDeadlineSensor(_Base):
