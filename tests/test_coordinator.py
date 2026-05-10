@@ -18,6 +18,7 @@ from custom_components.smart_ev_charging.const import (
     CONF_START_FIELD,
     DOMAIN,
     EVENT_PLAN_UPDATED,
+    EVENT_TARGET_REACHED,
 )
 
 
@@ -223,3 +224,81 @@ async def test_plug_debouncer_holds_through_unknown(hass: HomeAssistant) -> None
     hass.states.async_set("sensor.car_status", "3")  # explicit unplug
     await coordinator.async_refresh()
     assert coordinator.data.debounced_plugged_in is False
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_force_override_cleared_on_unplug(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator.apply_override("force", until=None)
+    await hass.async_block_till_done()
+    assert coordinator.data.override is not None
+
+    hass.states.async_set("sensor.car_status", "3")
+    await coordinator.async_refresh()
+    assert coordinator.data.debounced_plugged_in is False
+    assert coordinator.data.override is None
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_master_disable_clears_override(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator.apply_override("force", until=None)
+    await hass.async_block_till_done()
+    assert coordinator.data.override is not None
+
+    coordinator.set_master_enabled(False)
+    await coordinator.async_refresh()
+    assert coordinator.data.override is None
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_target_reached_event_fires_with_target_soc_override(hass: HomeAssistant) -> None:
+    """When no target_soc_entity is configured, target_reached should still fire
+    using the number.target_soc_override value (default 80)."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "30")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data.update(
+        {
+            "soc_entity": "sensor.car_soc",
+            "charging_status_entity": "sensor.car_status",
+            "plug_unplugged_values": ["3"],
+            "actively_charging_values": ["0"],
+        }
+    )
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True
+
+    fired: list[Any] = []
+    hass.bus.async_listen(EVENT_TARGET_REACHED, fired.append)
+
+    # SoC reaches the override target (80%)
+    hass.states.async_set("sensor.car_soc", "80")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert any(e.event_type == EVENT_TARGET_REACHED for e in fired)
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_apply_override_skip_requires_until(hass: HomeAssistant) -> None:
+    import pytest
+
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    with pytest.raises(ValueError, match="skip"):
+        coordinator.apply_override("skip", None)

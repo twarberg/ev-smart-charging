@@ -136,6 +136,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     def set_master_enabled(self, value: bool) -> None:
         self._master_enabled = value
+        if not value:
+            self._override = None
         self.hass.async_create_task(self.async_request_refresh())
 
     def set_slots_override(self, value: int) -> None:
@@ -151,6 +153,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self.hass.async_create_task(self.async_request_refresh())
 
     def apply_override(self, mode: Literal["force", "skip"], until: datetime | None) -> None:
+        if mode == "skip" and until is None:
+            raise ValueError("skip override requires a non-None until datetime")
         self._override = ChargeOverride(mode=mode, until=until)
         self.hass.async_create_task(self.async_request_refresh())
 
@@ -225,15 +229,15 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         # Expire override if it has a deadline that's now in the past.
         override = self._override
+        override_expired = False
         if override is not None and override.until is not None and now >= override.until:
             override = None
             self._override = None
+            override_expired = True
 
         # Force override: charge as long as SoC < target (or unknown).
-        if override is not None and override.mode == "force":
-            soc_known = soc is not None and target is not None
-            if not soc_known or (soc is not None and target is not None and soc < target):
-                return True, plan.status, None
+        if override is not None and override.mode == "force" and (soc is None or soc < target):
+            return True, plan.status, None
 
         skip_active = (
             override is not None
@@ -256,7 +260,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         this_hour = now.replace(minute=0, second=0, microsecond=0)
         if this_hour in plan.selected_starts:
             return True, plan.status, None
-        return False, plan.status, "plan_end"
+        return False, plan.status, "override_expired" if override_expired else "plan_end"
 
     def _start_reason(self) -> str:
         if self._override is not None and self._override.mode == "force":
@@ -287,13 +291,17 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 EVENT_STOPPED,
                 {"entry_id": self.entry.entry_id, "reason": stop_reason or "plan_end"},
             )
+        effective_target = (
+            car.target_soc_percent
+            if car.target_soc_percent is not None
+            else self._target_soc_override
+        )
         if (
             self._last_charge_now
             and prev_soc is not None
-            and car.target_soc_percent is not None
             and car.soc_percent is not None
-            and prev_soc < car.target_soc_percent
-            and car.soc_percent >= car.target_soc_percent
+            and prev_soc < effective_target
+            and car.soc_percent >= effective_target
         ):
             self.hass.bus.async_fire(
                 EVENT_TARGET_REACHED,
@@ -319,6 +327,12 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 ),
             )
         )
+
+        # Spec § 5.8: clear any active override the moment the car is unplugged.
+        # Done before _evaluate_charge_now so the force-override branch can't fire
+        # on an unplugged car.
+        if not debounced_plugged and self._override is not None:
+            self._override = None
 
         prev_soc = self.data.car_state.soc_percent if self.data is not None else None
         charge_now, status_label, stop_reason = self._evaluate_charge_now(
