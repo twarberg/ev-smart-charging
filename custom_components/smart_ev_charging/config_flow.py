@@ -236,5 +236,114 @@ class SmartEVOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         if user_input is not None:
+            errors, peek = _validate_price_source(
+                self.hass, {**self._entry.data, **self._entry.options, **user_input}
+            )
+            if errors:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._build_schema(),
+                    errors=errors,
+                    description_placeholders={"peek": peek or ""},
+                )
             return self.async_create_entry(title="", data=user_input)
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({}))
+        return self.async_show_form(step_id="init", data_schema=self._build_schema())
+
+    def _build_schema(self) -> vol.Schema:
+        merged: dict[str, Any] = {**self._entry.data, **self._entry.options}
+
+        def d(key: str, fallback: object) -> object:
+            return merged.get(key, fallback)
+
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_PRICE_ENTITY, default=d(CONF_PRICE_ENTITY, vol.UNDEFINED)
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["sensor", "binary_sensor"])
+                ),
+                vol.Required(
+                    CONF_PRICE_ATTRIBUTE,
+                    default=d(CONF_PRICE_ATTRIBUTE, DEFAULT_PRICE_ATTRIBUTE),
+                ): str,
+                vol.Required(
+                    CONF_START_FIELD, default=d(CONF_START_FIELD, DEFAULT_START_FIELD)
+                ): str,
+                vol.Required(
+                    CONF_PRICE_FIELD, default=d(CONF_PRICE_FIELD, DEFAULT_PRICE_FIELD)
+                ): str,
+                vol.Optional(
+                    CONF_END_FIELD, default=d(CONF_END_FIELD, DEFAULT_END_FIELD)
+                ): str,
+                vol.Required(
+                    CONF_CHARGER_SWITCH,
+                    default=d(CONF_CHARGER_SWITCH, vol.UNDEFINED),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="switch")
+                ),
+                vol.Required(
+                    CONF_CHARGER_KW, default=d(CONF_CHARGER_KW, DEFAULT_CHARGER_KW)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0.5, max=22, step=0.1, mode=_NM)
+                ),
+                vol.Optional(
+                    CONF_SOC_ENTITY, default=d(CONF_SOC_ENTITY, vol.UNDEFINED)
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(
+                    CONF_TARGET_SOC_ENTITY,
+                    default=d(CONF_TARGET_SOC_ENTITY, vol.UNDEFINED),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["sensor", "number"])
+                ),
+                vol.Optional(
+                    CONF_CHARGING_STATUS_ENTITY,
+                    default=d(CONF_CHARGING_STATUS_ENTITY, vol.UNDEFINED),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["sensor", "binary_sensor"])
+                ),
+                vol.Optional(
+                    CONF_PLUG_UNPLUGGED_VALUES,
+                    default=d(CONF_PLUG_UNPLUGGED_VALUES, DEFAULT_PLUG_UNPLUGGED_VALUES),
+                ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+                vol.Optional(
+                    CONF_ACTIVELY_CHARGING_VALUES,
+                    default=d(
+                        CONF_ACTIVELY_CHARGING_VALUES, DEFAULT_ACTIVELY_CHARGING_VALUES
+                    ),
+                ): selector.TextSelector(selector.TextSelectorConfig(multiple=True)),
+                vol.Optional(
+                    CONF_DEPARTURE_ENTITY,
+                    default=d(CONF_DEPARTURE_ENTITY, vol.UNDEFINED),
+                ): selector.EntitySelector(selector.EntitySelectorConfig()),
+                vol.Optional(
+                    CONF_BATTERY_KWH, default=d(CONF_BATTERY_KWH, DEFAULT_BATTERY_KWH)
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, max=200, step=0.1, mode=_NM)
+                ),
+                vol.Required(
+                    CONF_DEFAULT_DEPARTURE,
+                    default=d(CONF_DEFAULT_DEPARTURE, DEFAULT_DEPARTURE_TIME),
+                ): selector.TimeSelector(),
+                vol.Optional(
+                    CONF_MIN_MINUTES_LEFT_IN_HOUR,
+                    default=d(CONF_MIN_MINUTES_LEFT_IN_HOUR, DEFAULT_MIN_MINUTES_LEFT),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=59, step=1, mode=_NM)
+                ),
+                vol.Optional(
+                    CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
+                    default=d(
+                        CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
+                        DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE,
+                    ),
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_AUTO_REPLAN_ON_SOC_CHANGE,
+                    default=d(
+                        CONF_AUTO_REPLAN_ON_SOC_CHANGE, DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE
+                    ),
+                ): selector.BooleanSelector(),
+            }
+        )
