@@ -121,6 +121,16 @@
           "description": "Tidspunkt hvor normal planlægning genoptages."
         }
       }
+    },
+    "set_one_off_departure": {
+      "name": "Sæt engangs-afgangstid",
+      "description": "Tilsidesæt afgangstiden for kun den næste opladningscyklus. Vender automatisk tilbage når den planlagte deadline er passeret. Udelad departure_time for at rydde en aktiv override.",
+      "fields": {
+        "departure_time": {
+          "name": "Afgangstid",
+          "description": "TT:MM afgangstid for næste opladningscyklus. Lad være tom for at rydde."
+        }
+      }
     }
   },
   "entity": {

@@ -117,6 +117,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._target_soc_override: float = 80.0
         self._departure_fallback: time | None = None
         self._override: ChargeOverride | None = None
+        # (departure_time, deadline_at_apply_time) — auto-clears when now >= deadline.
+        self._one_off_departure: tuple[time, datetime] | None = None
         self._last_charge_now: bool = False
 
     async def async_setup(self) -> None:
@@ -178,6 +180,25 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._override = ChargeOverride(mode=mode, until=until)
         self.hass.async_create_task(self.async_request_refresh())
 
+    def apply_one_off_departure(self, departure_time: time | None) -> None:
+        """Apply a one-off departure override that clears after the targeted deadline.
+
+        Pass None to clear an active override.
+        """
+        if departure_time is None:
+            self._one_off_departure = None
+        else:
+            now = dt_util.now()
+            today = now.replace(
+                hour=departure_time.hour,
+                minute=departure_time.minute,
+                second=0,
+                microsecond=0,
+            )
+            deadline = today if today > now else today + timedelta(days=1)
+            self._one_off_departure = (departure_time, deadline)
+        self.hass.async_create_task(self.async_request_refresh())
+
     def _slots_needed(self, car: CarState) -> int:
         soc = car.soc_percent
         target = (
@@ -197,6 +218,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         return max(1, ceil(hours_raw))
 
     def _resolve_departure(self, car: CarState, now: datetime) -> tuple[datetime, str]:
+        if self._one_off_departure is not None:
+            return self._one_off_departure[1], "one_off"
         time_part: time | None = None
         source = "default"
         if car.departure is not None:
@@ -331,6 +354,10 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     async def _async_update_data(self) -> CoordinatorData:
         now = dt_util.now()
+        # Auto-clear an expired one-off departure override (the targeted deadline
+        # has passed, so the next charge cycle should fall back to the normal source).
+        if self._one_off_departure is not None and now >= self._one_off_departure[1]:
+            self._one_off_departure = None
         car = read_car_state(self.hass, self._car_config)  # type: ignore[arg-type]
         debounced_plugged = self._debounce_plug(car)
         prices = self._price_source.get_slots()

@@ -438,6 +438,54 @@ async def test_service_skip_until_blocks_plan(hass: HomeAssistant) -> None:
         assert coordinator.data.charge_now is False
 
 
+async def test_service_set_one_off_departure_changes_deadline(hass: HomeAssistant) -> None:
+    """Setting a one-off departure shifts the targeted deadline and source."""
+    with freeze_time("2026-05-10 22:00:00+02:00") as frozen:
+        entry = await _setup_with_soc(hass)
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        # Default is 08:00 → deadline tomorrow 08:00.
+        assert coordinator.data.effective_departure_time == "08:00"
+        assert coordinator.data.effective_departure_source == "default"
+
+        await hass.services.async_call(
+            DOMAIN,
+            "set_one_off_departure",
+            {"departure_time": "06:00"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        assert coordinator.data.effective_departure_time == "06:00"
+        assert coordinator.data.effective_departure_source == "one_off"
+
+        # After the override-targeted deadline passes, auto-clear. Advance two
+        # days so we're definitely past the deadline regardless of HA's test
+        # timezone.
+        frozen.move_to("2026-05-12 12:00:00+02:00")
+        await coordinator.async_refresh()
+        assert coordinator.data.effective_departure_source == "default"
+
+
+async def test_service_set_one_off_departure_clears_when_omitted(hass: HomeAssistant) -> None:
+    with freeze_time("2026-05-10 22:00:00+02:00"):
+        entry = await _setup_with_soc(hass)
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        await hass.services.async_call(
+            DOMAIN, "set_one_off_departure", {"departure_time": "06:00"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        assert coordinator.data.effective_departure_source == "one_off"
+
+        # Empty call clears the override.
+        await hass.services.async_call(
+            DOMAIN, "set_one_off_departure", {}, blocking=True
+        )
+        await hass.async_block_till_done()
+        await coordinator.async_refresh()
+        assert coordinator.data.effective_departure_source == "default"
+
+
 @freeze_time("2026-05-11 02:30:00+02:00")
 async def test_slots_needed_reflects_short_charge(hass: HomeAssistant) -> None:
     """Sensor reads coordinator.data.slots_needed (calculated), not window_size.

@@ -48,6 +48,10 @@ the wizard.
 - `smart_ev_charging.force_charge_now` — charge immediately, ignoring the price
   plan, until target SoC or unplug. Optional `duration` field.
 - `smart_ev_charging.skip_until` — don't charge before the given datetime.
+- `smart_ev_charging.set_one_off_departure` — override the departure deadline
+  for the next charge cycle only. Takes `departure_time` (HH:MM); auto-reverts
+  after the targeted deadline passes. Call with no fields to clear an active
+  override immediately.
 
 ## Events
 

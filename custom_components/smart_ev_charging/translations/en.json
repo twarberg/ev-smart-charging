@@ -123,6 +123,16 @@
           "description": "Datetime when normal planning should resume."
         }
       }
+    },
+    "set_one_off_departure": {
+      "name": "Set one-off departure",
+      "description": "Override the departure deadline for the next charge cycle only. Auto-reverts after the targeted deadline passes. Omit departure_time to clear an active override.",
+      "fields": {
+        "departure_time": {
+          "name": "Departure time",
+          "description": "HH:MM departure time for the next charge cycle. Leave blank to clear."
+        }
+      }
     }
   },
   "entity": {

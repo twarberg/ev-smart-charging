@@ -1,7 +1,7 @@
 """Smart EV Charging integration."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -17,6 +17,7 @@ from .const import (
     PLATFORMS,
     SERVICE_FORCE_CHARGE_NOW,
     SERVICE_REPLAN,
+    SERVICE_SET_ONE_OFF_DEPARTURE,
     SERVICE_SKIP_UNTIL,
 )
 from .coordinator import SmartEVCoordinator
@@ -26,6 +27,9 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _REPLAN_SCHEMA = vol.Schema({}, extra=vol.ALLOW_EXTRA)
 _FORCE_SCHEMA = vol.Schema({vol.Optional("duration"): cv.time_period}, extra=vol.ALLOW_EXTRA)
 _SKIP_SCHEMA = vol.Schema({vol.Required("until"): cv.datetime}, extra=vol.ALLOW_EXTRA)
+_ONE_OFF_DEPARTURE_SCHEMA = vol.Schema(
+    {vol.Optional("departure_time"): cv.time}, extra=vol.ALLOW_EXTRA
+)
 
 
 def _resolve_coordinators(hass: HomeAssistant, call: ServiceCall) -> list[SmartEVCoordinator]:
@@ -75,11 +79,22 @@ async def _register_services(hass: HomeAssistant) -> None:
         for c in _resolve_coordinators(hass, call):
             c.apply_override("skip", until=until)
 
+    async def _one_off_departure(call: ServiceCall) -> None:
+        departure_time: time | None = call.data.get("departure_time")
+        for c in _resolve_coordinators(hass, call):
+            c.apply_one_off_departure(departure_time)
+
     hass.services.async_register(DOMAIN, SERVICE_REPLAN, _replan, schema=_REPLAN_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_FORCE_CHARGE_NOW, _force, schema=_FORCE_SCHEMA
     )
     hass.services.async_register(DOMAIN, SERVICE_SKIP_UNTIL, _skip, schema=_SKIP_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_ONE_OFF_DEPARTURE,
+        _one_off_departure,
+        schema=_ONE_OFF_DEPARTURE_SCHEMA,
+    )
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:

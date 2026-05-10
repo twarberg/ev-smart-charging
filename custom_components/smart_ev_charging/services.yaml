@@ -34,3 +34,20 @@ skip_until:
       required: true
       selector:
         datetime:
+
+set_one_off_departure:
+  name: Set one-off departure
+  description: >-
+    Override the departure deadline for the next charge cycle only. The override
+    auto-reverts after the targeted deadline passes. Omit departure_time to
+    clear an active override immediately.
+  target:
+    entity:
+      integration: smart_ev_charging
+  fields:
+    departure_time:
+      name: Departure time
+      description: HH:MM departure time for the next charge cycle. Leave blank to clear.
+      required: false
+      selector:
+        time:
