@@ -120,7 +120,7 @@ charge-window timeline with prices, estimated cost, and action buttons.
 Uses attributes on `sensor.daily_planned_hours` (`hours`, `hour_prices`,
 `estimated_cost`, `cost_unit`).
 
-Two prerequisites:
+Three prerequisites:
 
 1. **Device ID.** Open Settings → Devices & Services → Smart EV Charging →
    click the device → the URL ends in `…&device=<id>`. Paste this into the
@@ -128,8 +128,29 @@ Two prerequisites:
 2. **A time helper for the one-off button.** Settings → Devices & Services →
    Helpers → Create Helper → Date and/or time → "Time only" → name it
    `EV one-off departure` (entity will be `input_datetime.ev_one_off_departure`).
-   The Set one-off button reads from this helper, so adjust the helper to
-   the desired departure time before pressing the button.
+3. **A script** that reads the helper and calls the service. Standard
+   Lovelace button cards don't template `tap_action.data`; a script does.
+   In `configuration.yaml` (or via Settings → Automations & Scenes → Scripts):
+
+   ```yaml
+   script:
+     ev_apply_one_off_departure:
+       alias: EV — apply one-off departure
+       sequence:
+         - service: smart_ev_charging.set_one_off_departure
+           target:
+             device_id: REPLACE_WITH_DEVICE_ID
+           data:
+             departure_time: "{{ states('input_datetime.ev_one_off_departure') }}"
+     ev_clear_one_off_departure:
+       alias: EV — clear one-off departure
+       sequence:
+         - service: smart_ev_charging.set_one_off_departure
+           target:
+             device_id: REPLACE_WITH_DEVICE_ID
+   ```
+
+   Reload scripts after adding (Developer Tools → YAML → Reload Scripts).
 
 ```yaml
 type: vertical-stack
@@ -193,20 +214,13 @@ cards:
         icon: mdi:clock-edit-outline
         tap_action:
           action: call-service
-          service: smart_ev_charging.set_one_off_departure
-          target:
-            device_id: REPLACE_WITH_DEVICE_ID
-          data:
-            departure_time: "{{ states('input_datetime.ev_one_off_departure') }}"
+          service: script.ev_apply_one_off_departure
       - type: button
         name: Clear override
         icon: mdi:close-circle-outline
         tap_action:
           action: call-service
-          service: smart_ev_charging.set_one_off_departure
-          target:
-            device_id: REPLACE_WITH_DEVICE_ID
-          data: {}
+          service: script.ev_clear_one_off_departure
 ```
 
 ## Troubleshooting
