@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -192,3 +192,40 @@ def test_filters_past_slots(prices: list[PriceSlot]) -> None:
     plan = make_plan(inp)
     cutoff = datetime(2026, 5, 10, 18, 0, tzinfo=CPH)
     assert all(s >= cutoff for s in plan.selected_starts)
+
+
+def test_dst_spring_forward_does_not_synthesize_missing_hour() -> None:
+    # 2026-03-29 in Europe/Copenhagen: 02:00 doesn't exist (clock jumps to 03:00)
+    cph = ZoneInfo("Europe/Copenhagen")
+    base = datetime(2026, 3, 28, 0, 0, tzinfo=cph)
+    prices: list[PriceSlot] = []
+    for h in range(48):
+        start = base + timedelta(hours=h)
+        # Skip the non-existent 2026-03-29 02:00 CET slot
+        if start.date() == datetime(2026, 3, 29).date() and start.hour == 2:
+            continue
+        prices.append(PriceSlot(start=start, end=start + timedelta(hours=1), price=1.0 + h * 0.01))
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=3,
+            departure=datetime(2026, 3, 29, 8, 0, tzinfo=cph),
+            now=datetime(2026, 3, 28, 18, 0, tzinfo=cph),
+        )
+    )
+    nonexistent = datetime(2026, 3, 29, 2, 0, tzinfo=cph)
+    assert nonexistent not in plan.selected_starts
+
+
+def test_mixed_timezones_compare_correctly(prices: list[PriceSlot]) -> None:
+    from datetime import UTC
+
+    inp = PlanInput(
+        prices=prices,
+        slots_needed=3,
+        departure=datetime(2026, 5, 11, 8, 0, tzinfo=CPH),
+        now=datetime(2026, 5, 10, 16, 0, tzinfo=UTC),  # = 18:00 CPH
+    )
+    plan = make_plan(inp)
+    assert plan.status == "ok"
+    assert len(plan.selected_starts) == 3
