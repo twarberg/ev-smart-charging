@@ -51,7 +51,7 @@ def test_picks_three_cheapest_overnight(prices: list[PriceSlot]) -> None:
         datetime(2026, 5, 11, 4, 0, tzinfo=CPH),
     }
     assert set(plan.selected_starts) == expected
-    assert plan.selected_starts == sorted(plan.selected_starts)
+    assert list(plan.selected_starts) == sorted(plan.selected_starts)
     assert plan.was_extended is False
     assert plan.deadline == datetime(2026, 5, 11, 8, 0, tzinfo=CPH)
     assert plan.initial_deadline == plan.deadline

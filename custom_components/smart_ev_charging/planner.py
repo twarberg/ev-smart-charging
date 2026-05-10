@@ -1,11 +1,13 @@
 """Pure Python charging planner. Zero Home Assistant imports — keep it that way."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 PlanStatus = Literal["ok", "partial", "extended", "no_data"]
+
+_SENTINEL_DT: datetime = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -26,9 +28,9 @@ class PlanInput:
 
 @dataclass(frozen=True)
 class Plan:
-    selected_starts: list[datetime] = field(default_factory=list)
-    deadline: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
-    initial_deadline: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    selected_starts: tuple[datetime, ...] = ()
+    deadline: datetime = _SENTINEL_DT
+    initial_deadline: datetime = _SENTINEL_DT
     was_extended: bool = False
     window_size: int = 0
     status: PlanStatus = "no_data"
@@ -57,7 +59,7 @@ def make_plan(inp: PlanInput) -> Plan:
     window = [s for s in prices if effective_start <= s.start < deadline]
     effective_slots = min(slots_needed, len(window))
     cheapest = sorted(window, key=lambda s: s.price)[:effective_slots]
-    selected_starts = sorted(s.start for s in cheapest)
+    selected_starts = tuple(sorted(s.start for s in cheapest))
 
     if len(window) == 0:
         status: PlanStatus = "no_data"
