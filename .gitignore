@@ -12,3 +12,4 @@ dist/
 venv/
 .env
 .hass_storage/
+.superpowers/
