@@ -84,9 +84,13 @@ class PlannedHoursSensor(_Base):
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data
         starts = data.plan.selected_starts
+        entry = self.coordinator.entry
+        cfg = {**entry.data, **entry.options}
+        charger_kw = float(cfg.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW))
         return {
             "hours": [s.isoformat() for s in starts],
             "hour_prices": list(data.plan.selected_prices),
+            "hour_kwh": [charger_kw for _ in starts],
             "estimated_cost": data.estimated_cost,
             "cost_unit": data.cost_unit,
             "next_charge_start": starts[0].isoformat() if starts else None,

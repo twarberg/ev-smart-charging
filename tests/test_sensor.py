@@ -1,6 +1,7 @@
 """Sensor attribute tests."""
 from __future__ import annotations
 
+from freezegun import freeze_time
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -40,3 +41,44 @@ async def test_plan_status_sensor_exposes_discovery_hints(hass: HomeAssistant) -
     # Existing keys must still be present (backwards-compatible)
     assert "override_mode" in attrs
     assert "override_until" in attrs
+
+
+@freeze_time("2026-05-11 01:30:00+02:00")
+async def test_planned_hours_sensor_exposes_hour_kwh(hass: HomeAssistant) -> None:
+    """PlannedHoursSensor.extra_state_attributes must include hour_kwh parallel to hours."""
+    _seed_prices(hass)
+
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=_base_entry_data())
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    state = hass.states.get("sensor.daily_planned_hours")
+    assert state is not None, "sensor.daily_planned_hours not found"
+
+    attrs = state.attributes
+
+    # Existing keys must still be present (backwards-compatible)
+    assert "hours" in attrs
+    assert "hour_prices" in attrs
+    assert "estimated_cost" in attrs
+    assert "cost_unit" in attrs
+    assert "next_charge_start" in attrs
+    assert "next_charge_end" in attrs
+
+    # New key: hour_kwh must be present and parallel to hours
+    assert "hour_kwh" in attrs, "hour_kwh key missing from PlannedHoursSensor attributes"
+    hour_kwh = attrs["hour_kwh"]
+    hours = attrs["hours"]
+
+    assert isinstance(hour_kwh, list), "hour_kwh must be a list"
+    assert len(hour_kwh) == len(hours), "hour_kwh must have same length as hours"
+
+    # With freeze_time at 01:30 CEST and cheap slots from 02:00 onward, planner
+    # should select at least one hour — verify each element equals charger_kw (11.0)
+    if hours:
+        assert all(v == 11.0 for v in hour_kwh), f"Each hour_kwh entry must equal 11.0; got {hour_kwh}"
+    else:
+        # Zero selected hours is still valid; hour_kwh must be an empty list
+        assert hour_kwh == []
