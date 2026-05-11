@@ -11,7 +11,14 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_CHARGER_KW,
+    CONF_PRICE_ENTITY,
+    CONF_SOC_ENTITY,
+    CONF_TARGET_SOC_ENTITY,
+    DEFAULT_CHARGER_KW,
+    DOMAIN,
+)
 from .coordinator import SmartEVCoordinator
 
 _ICONS = {
@@ -54,9 +61,15 @@ class PlanStatusSensor(_Base):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         ov = self.coordinator.data.override
+        entry = self.coordinator.entry
+        cfg = {**entry.data, **entry.options}
         return {
             "override_mode": ov.mode if ov else None,
             "override_until": ov.until.isoformat() if ov and ov.until else None,
+            "source_price_entity": cfg.get(CONF_PRICE_ENTITY),
+            "charger_kw": float(cfg.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW)),
+            "soc_entity": cfg.get(CONF_SOC_ENTITY),
+            "target_soc_entity": cfg.get(CONF_TARGET_SOC_ENTITY),
         }
 
 
