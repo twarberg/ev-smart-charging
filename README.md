@@ -50,7 +50,7 @@ Notable options on the **Defaults** step:
 | `sensor.<n>_planned_hours` | Count + list of planned hours in attributes |
 | `sensor.<n>_slots_needed` | Hours needed to reach target SoC |
 | `sensor.<n>_active_deadline` | Datetime the plan is targeting |
-| `sensor.<n>_effective_departure` | `HH:MM` with `source` attribute (`car`/`helper`/`default`) |
+| `sensor.<n>_effective_departure` | `HH:MM` with `source` attribute (`car`/`helper`/`default`/`one_off`) |
 | `binary_sensor.<n>_plugged_in` | `on` when the car is plugged in |
 | `binary_sensor.<n>_actively_charging` | `on` when actually drawing power |
 | `binary_sensor.<n>_charge_now` | Driving signal — `on` when the integration wants to charge |
@@ -58,6 +58,28 @@ Notable options on the **Defaults** step:
 | `number.<n>_target_soc` | (only if no target SoC sensor) |
 | `number.<n>_charge_slots_override` | (only if no SoC sensor) |
 | `datetime.<n>_departure_fallback` | (only if no departure sensor) |
+
+### Discovery attributes on `sensor.<n>_plan_status`
+
+For downstream consumers (notably the companion Lovelace card) the plan-status
+sensor also publishes the upstream entity ids and current behavior flags as
+state attributes:
+
+| Attribute | Description |
+|---|---|
+| `source_price_entity` | The price entity feeding the planner |
+| `charger_kw` | Effective charging power configured for this device |
+| `soc_entity` / `target_soc_entity` | The car's SoC + target SoC entity (if configured) |
+| `min_soc_threshold` | The minimum-SoC gate ceiling, 0–100 (`100` = gate disabled) |
+| `min_soc_gate_active` | `true` while SoC is known and ≥ `min_soc_threshold` |
+| `override_mode` / `override_until` | `force` / `skip` and its expiry, if active |
+
+### Per-slot energy on `sensor.<n>_planned_hours`
+
+`hour_kwh` in the attributes is a list parallel to `hours`. The first slots
+draw the full `charger_kw`; the **last slot may be partial** because the
+integration stops the moment target SoC is reached. `estimated_cost` is
+`Σ hour_prices[i] × hour_kwh[i]`, so it matches what the car actually bills.
 
 ## Services
 
