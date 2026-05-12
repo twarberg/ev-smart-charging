@@ -69,7 +69,9 @@ async def test_plan_status_sensor_reports_soc_gate(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    attrs = hass.states.get("sensor.daily_plan_status").attributes
+    state = hass.states.get("sensor.daily_plan_status")
+    assert state is not None
+    attrs = state.attributes
     assert attrs["min_soc_threshold"] == 70
     assert attrs["min_soc_gate_active"] is True
 

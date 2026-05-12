@@ -25,6 +25,23 @@ The 5-step config flow takes about a minute. Defaults are tuned for Mercedes
 PHEV + Strømligning + OCPP, but every field can be changed without leaving
 the wizard.
 
+### Options
+
+All settings can be re-opened later via **Configure** on the integration tile.
+Notable options on the **Defaults** step:
+
+- **Only charge if SoC is below (%)** — minimum-SoC gate (since v0.3.0).
+  When the car's current SoC is at or above this threshold, the planner
+  returns zero slots and the charger stays off, even if the existing target
+  SoC hasn't been reached. Default `100` disables the gate (always plan
+  toward target). Useful for skipping top-ups when the car already has
+  enough charge for the day, or for capping battery cycling without
+  changing the target.
+- **Replan when prices update** / **Replan on every SoC change** —
+  automatic replanning triggers.
+- **Skip current hour if less than N minutes remain** — avoid scheduling a
+  near-empty leading slot.
+
 ## What you get
 
 | Entity | Description |
