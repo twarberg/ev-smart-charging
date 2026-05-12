@@ -80,8 +80,9 @@ class CoordinatorData:
     min_soc_gate_active: bool  # True iff soc is known and soc >= threshold (and gate enabled)
     effective_departure_time: str  # "HH:MM"
     effective_departure_source: str  # "car" / "helper" / "default"
-    estimated_cost: float | None  # sum(selected_prices) * charger_kw, or None
+    estimated_cost: float | None  # sum(hour_kwh[i] * selected_prices[i]), or None
     cost_unit: str | None  # currency derived from price entity, e.g. "DKK"
+    hour_kwh: tuple[float, ...]  # kWh per selected slot; last entry may be partial
 
 
 class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
@@ -203,6 +204,21 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             self._one_off_departure = (departure_time, deadline)
         self.hass.async_create_task(self.async_request_refresh())
 
+    def _kwh_needed(self, car: CarState) -> float | None:
+        """Unbuffered kWh required to reach target SoC, or None when SoC unknown."""
+        soc = car.soc_percent
+        if soc is None:
+            return None
+        target = (
+            car.target_soc_percent
+            if car.target_soc_percent is not None
+            else self._target_soc_override
+        )
+        if soc >= target:
+            return 0.0
+        battery_kwh = float(self._merged.get(CONF_BATTERY_KWH, DEFAULT_BATTERY_KWH))
+        return max(0.0, (target - soc) / 100.0 * battery_kwh)
+
     def _slots_needed(self, car: CarState) -> int:
         soc = car.soc_percent
         target = (
@@ -210,7 +226,6 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             if car.target_soc_percent is not None
             else self._target_soc_override
         )
-        battery_kwh = float(self._merged.get(CONF_BATTERY_KWH, DEFAULT_BATTERY_KWH))
         charger_kw = float(self._merged.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW))
         if soc is None:
             return self._slots_override
@@ -222,7 +237,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if soc >= target:
             return 0
         buffer = 1.05 if target <= 80 else 1.10
-        kwh_needed = max(0.0, (target - soc) / 100.0 * battery_kwh)
+        kwh_needed = self._kwh_needed(car) or 0.0
         hours_raw = kwh_needed / charger_kw * buffer
         return max(1, ceil(hours_raw))
 
@@ -420,8 +435,24 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             actively_charging = car.actively_charging
 
         charger_kw = float(self._merged.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW))
+        # Distribute the energy required to reach target across the planned slots
+        # in chronological order. Each slot takes up to charger_kw; the final slot
+        # may be partial. When SoC is unknown (override mode), every slot is full.
+        kwh_needed_for_cost = self._kwh_needed(car)
+        n_slots = len(plan.selected_starts)
+        if kwh_needed_for_cost is None:
+            hour_kwh: tuple[float, ...] = tuple(charger_kw for _ in range(n_slots))
+        else:
+            remaining = kwh_needed_for_cost
+            buf: list[float] = []
+            for _ in range(n_slots):
+                take = min(remaining, charger_kw)
+                buf.append(take)
+                remaining -= take
+            hour_kwh = tuple(buf)
         estimated_cost: float | None = (
-            sum(plan.selected_prices) * charger_kw if plan.selected_prices else None
+            sum(p * k for p, k in zip(plan.selected_prices, hour_kwh, strict=True))
+            if plan.selected_prices else None
         )
         cost_unit: str | None = None
         price_state = self.hass.states.get(self._merged[CONF_PRICE_ENTITY])
@@ -448,6 +479,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             effective_departure_source=departure_source,
             estimated_cost=estimated_cost,
             cost_unit=cost_unit,
+            hour_kwh=hour_kwh,
         )
 
         # Only fire plan_updated when something downstream subscribers care about
