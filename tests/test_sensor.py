@@ -6,6 +6,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.smart_ev_charging.const import (
+    CONF_MIN_SOC_THRESHOLD,
     CONF_SOC_ENTITY,
     CONF_TARGET_SOC_ENTITY,
     DOMAIN,
@@ -32,7 +33,7 @@ async def test_plan_status_sensor_exposes_discovery_hints(hass: HomeAssistant) -
 
     attrs = state.attributes
 
-    # Four new discovery hints
+    # Four discovery hints
     assert attrs["source_price_entity"] == "sensor.fake_prices"
     assert attrs["charger_kw"] == 11.0
     assert attrs["soc_entity"] == "sensor.test_soc"
@@ -41,6 +42,36 @@ async def test_plan_status_sensor_exposes_discovery_hints(hass: HomeAssistant) -
     # Existing keys must still be present (backwards-compatible)
     assert "override_mode" in attrs
     assert "override_until" in attrs
+
+    # SoC gate: default threshold = 100 → gate disabled
+    assert attrs["min_soc_threshold"] == 100
+    assert attrs["min_soc_gate_active"] is False
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_plan_status_sensor_reports_soc_gate(hass: HomeAssistant) -> None:
+    """PlanStatusSensor must surface min_soc_threshold + min_soc_gate_active."""
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "75")
+    hass.states.async_set("sensor.car_target", "90")
+    hass.states.async_set("sensor.car_status", "0")
+
+    data = _base_entry_data()
+    data[CONF_SOC_ENTITY] = "sensor.car_soc"
+    data[CONF_TARGET_SOC_ENTITY] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    data[CONF_MIN_SOC_THRESHOLD] = 70
+
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    attrs = hass.states.get("sensor.daily_plan_status").attributes
+    assert attrs["min_soc_threshold"] == 70
+    assert attrs["min_soc_gate_active"] is True
 
 
 @freeze_time("2026-05-11 01:30:00+02:00")
