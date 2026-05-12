@@ -27,6 +27,7 @@ from .const import (
     CONF_DEPARTURE_ENTITY,
     CONF_END_FIELD,
     CONF_MIN_MINUTES_LEFT_IN_HOUR,
+    CONF_MIN_SOC_THRESHOLD,
     CONF_PLUG_UNPLUGGED_VALUES,
     CONF_PRICE_ATTRIBUTE,
     CONF_PRICE_ENTITY,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_CHARGER_KW,
     DEFAULT_DEPARTURE_TIME,
     DEFAULT_MIN_MINUTES_LEFT,
+    DEFAULT_MIN_SOC_THRESHOLD,
     DEFAULT_PLUG_UNPLUGGED_VALUES,
     DOMAIN,
     EVENT_PLAN_UPDATED,
@@ -210,6 +212,11 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         charger_kw = float(self._merged.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW))
         if soc is None:
             return self._slots_override
+        min_threshold = float(
+            self._merged.get(CONF_MIN_SOC_THRESHOLD, DEFAULT_MIN_SOC_THRESHOLD)
+        )
+        if soc >= min_threshold:
+            return 0
         if soc >= target:
             return 0
         buffer = 1.05 if target <= 80 else 1.10
