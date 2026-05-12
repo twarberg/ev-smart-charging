@@ -71,6 +71,7 @@ async def _register_services(hass: HomeAssistant) -> None:
         until = dt_util.now() + duration if duration is not None else None
         for c in _resolve_coordinators(hass, call):
             c.apply_override("force", until=until)
+            await c.async_refresh()
 
     async def _skip(call: ServiceCall) -> None:
         until: datetime = call.data["until"]
@@ -78,11 +79,13 @@ async def _register_services(hass: HomeAssistant) -> None:
             until = dt_util.as_local(until)
         for c in _resolve_coordinators(hass, call):
             c.apply_override("skip", until=until)
+            await c.async_refresh()
 
     async def _one_off_departure(call: ServiceCall) -> None:
         departure_time: time | None = call.data.get("departure_time")
         for c in _resolve_coordinators(hass, call):
             c.apply_one_off_departure(departure_time)
+            await c.async_refresh()
 
     hass.services.async_register(DOMAIN, SERVICE_REPLAN, _replan, schema=_REPLAN_SCHEMA)
     hass.services.async_register(
