@@ -76,6 +76,8 @@ class CoordinatorData:
     actively_charging: bool
     slots_needed: int
     slots_needed_source: str  # "calculated" or "override"
+    min_soc_threshold: float  # 0-100; 100 = gate disabled
+    min_soc_gate_active: bool  # True iff soc is known and soc >= threshold (and gate enabled)
     effective_departure_time: str  # "HH:MM"
     effective_departure_source: str  # "car" / "helper" / "default"
     estimated_cost: float | None  # sum(selected_prices) * charger_kw, or None
@@ -401,6 +403,14 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             status_label = "unplugged"
 
         slots_needed_source = "calculated" if car.soc_percent is not None else "override"
+        min_soc_threshold = float(
+            self._merged.get(CONF_MIN_SOC_THRESHOLD, DEFAULT_MIN_SOC_THRESHOLD)
+        )
+        min_soc_gate_active = (
+            car.soc_percent is not None
+            and min_soc_threshold < 100
+            and car.soc_percent >= min_soc_threshold
+        )
         effective_departure_time = plan.initial_deadline.strftime("%H:%M")
         # When no charging-status entity is configured, we can't observe physical
         # charging state, so we mirror the integration's own intent (charge_now).
@@ -432,6 +442,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             actively_charging=actively_charging,
             slots_needed=slots_needed,
             slots_needed_source=slots_needed_source,
+            min_soc_threshold=min_soc_threshold,
+            min_soc_gate_active=min_soc_gate_active,
             effective_departure_time=effective_departure_time,
             effective_departure_source=departure_source,
             estimated_cost=estimated_cost,

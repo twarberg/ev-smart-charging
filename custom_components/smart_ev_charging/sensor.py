@@ -60,7 +60,8 @@ class PlanStatusSensor(_Base):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        ov = self.coordinator.data.override
+        data = self.coordinator.data
+        ov = data.override
         entry = self.coordinator.entry
         cfg = {**entry.data, **entry.options}
         return {
@@ -70,6 +71,8 @@ class PlanStatusSensor(_Base):
             "charger_kw": float(cfg.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW)),
             "soc_entity": cfg.get(CONF_SOC_ENTITY),
             "target_soc_entity": cfg.get(CONF_TARGET_SOC_ENTITY),
+            "min_soc_threshold": data.min_soc_threshold,
+            "min_soc_gate_active": data.min_soc_gate_active,
         }
 
 
