@@ -573,14 +573,23 @@ async def test_slots_needed_charges_when_soc_below_threshold(
 
 
 @freeze_time("2026-05-11 02:30:00+02:00")
-async def test_estimated_cost_uses_charger_kw(hass: HomeAssistant) -> None:
-    """estimated_cost == sum(selected_prices) * charger_kw, in plain currency."""
+async def test_estimated_cost_reflects_partial_last_hour(hass: HomeAssistant) -> None:
+    """estimated_cost = sum(price * hour_kwh) where last slot's kWh is partial.
+
+    soc=30, target=80, battery=31.2 kWh → kwh_needed = 15.6 kWh.
+    charger_kw=11 → first slot draws 11 kWh, second slot draws the remaining 4.6 kWh.
+    """
     async_mock_service(hass, "switch", "turn_on")
     async_mock_service(hass, "switch", "turn_off")
     entry = await _setup_with_soc(hass, soc=30.0, target=80.0)
     coordinator = hass.data[DOMAIN][entry.entry_id]
     plan = coordinator.data.plan
-    expected = sum(plan.selected_prices) * 11.0
+    hour_kwh = coordinator.data.hour_kwh
+    assert len(plan.selected_prices) == 2
+    assert hour_kwh == (11.0, 4.6) or (
+        len(hour_kwh) == 2 and abs(hour_kwh[0] - 11.0) < 1e-9 and abs(hour_kwh[1] - 4.6) < 1e-9
+    )
+    expected = sum(p * k for p, k in zip(plan.selected_prices, hour_kwh, strict=True))
     assert coordinator.data.estimated_cost is not None
     assert abs(coordinator.data.estimated_cost - expected) < 1e-9
     # _seed_prices sets unit_of_measurement="DKK/kWh"; cost_unit strips "/kWh".
