@@ -48,7 +48,8 @@
           "default_departure": "Default departure time",
           "min_minutes_left_in_hour": "Skip current hour if less than N minutes remain",
           "auto_replan_on_price_update": "Replan when prices update",
-          "auto_replan_on_soc_change": "Replan on every SoC change"
+          "auto_replan_on_soc_change": "Replan on every SoC change",
+          "min_soc_threshold": "Only charge if SoC is below (%) — 100 disables the gate"
         }
       }
     },
@@ -87,7 +88,8 @@
           "default_departure": "Default departure time",
           "min_minutes_left_in_hour": "Skip current hour if less than N minutes remain",
           "auto_replan_on_price_update": "Replan when prices update",
-          "auto_replan_on_soc_change": "Replan on every SoC change"
+          "auto_replan_on_soc_change": "Replan on every SoC change",
+          "min_soc_threshold": "Only charge if SoC is below (%) — 100 disables the gate"
         }
       }
     },

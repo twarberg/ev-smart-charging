@@ -13,6 +13,7 @@ from custom_components.smart_ev_charging.const import (
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
     CONF_DEFAULT_DEPARTURE,
+    CONF_MIN_SOC_THRESHOLD,
     CONF_PRICE_ATTRIBUTE,
     CONF_PRICE_ENTITY,
     CONF_PRICE_FIELD,
@@ -514,6 +515,61 @@ async def test_slots_needed_zero_when_soc_at_target(hass: HomeAssistant) -> None
     assert coordinator.data.plan.selected_starts == ()
     assert coordinator.data.charge_now is False
     assert coordinator.data.estimated_cost is None
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_slots_needed_zero_when_soc_at_or_above_threshold(
+    hass: HomeAssistant,
+) -> None:
+    """Gate: SoC ≥ min_soc_threshold short-circuits planning, even with SoC < target."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "75")
+    hass.states.async_set("sensor.car_target", "90")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data["soc_entity"] = "sensor.car_soc"
+    data["target_soc_entity"] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    data[CONF_MIN_SOC_THRESHOLD] = 70
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.slots_needed == 0
+    assert coordinator.data.plan.selected_starts == ()
+    assert coordinator.data.charge_now is False
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_slots_needed_charges_when_soc_below_threshold(
+    hass: HomeAssistant,
+) -> None:
+    """Gate: SoC < min_soc_threshold still plans charging normally."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "50")
+    hass.states.async_set("sensor.car_target", "80")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data["soc_entity"] = "sensor.car_soc"
+    data["target_soc_entity"] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    data[CONF_MIN_SOC_THRESHOLD] = 70
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.slots_needed > 0
+    assert coordinator.data.slots_needed_source == "calculated"
 
 
 @freeze_time("2026-05-11 02:30:00+02:00")

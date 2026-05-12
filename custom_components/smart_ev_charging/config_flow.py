@@ -24,6 +24,7 @@ from .const import (
     CONF_DEPARTURE_ENTITY,
     CONF_END_FIELD,
     CONF_MIN_MINUTES_LEFT_IN_HOUR,
+    CONF_MIN_SOC_THRESHOLD,
     CONF_PLUG_UNPLUGGED_VALUES,
     CONF_PRICE_ATTRIBUTE,
     CONF_PRICE_ENTITY,
@@ -39,6 +40,7 @@ from .const import (
     DEFAULT_DEPARTURE_TIME,
     DEFAULT_END_FIELD,
     DEFAULT_MIN_MINUTES_LEFT,
+    DEFAULT_MIN_SOC_THRESHOLD,
     DEFAULT_NAME,
     DEFAULT_PLUG_UNPLUGGED_VALUES,
     DEFAULT_PRICE_ATTRIBUTE,
@@ -158,6 +160,11 @@ _DEFAULTS_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_AUTO_REPLAN_ON_SOC_CHANGE, default=DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE
         ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_MIN_SOC_THRESHOLD, default=DEFAULT_MIN_SOC_THRESHOLD
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(min=0, max=100, step=1, mode=_NM)
+        ),
     }
 )
 
@@ -356,5 +363,11 @@ class SmartEVOptionsFlow(config_entries.OptionsFlow):
                         CONF_AUTO_REPLAN_ON_SOC_CHANGE, DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE
                     ),
                 ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_MIN_SOC_THRESHOLD,
+                    default=d(CONF_MIN_SOC_THRESHOLD, DEFAULT_MIN_SOC_THRESHOLD),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=100, step=1, mode=_NM)
+                ),
             }
         )

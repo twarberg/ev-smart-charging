@@ -46,7 +46,8 @@
           "default_departure": "Standard-afgangstid",
           "min_minutes_left_in_hour": "Spring nuværende time over hvis under N min. tilbage",
           "auto_replan_on_price_update": "Genplanlæg når priser opdateres",
-          "auto_replan_on_soc_change": "Genplanlæg ved enhver SoC-ændring"
+          "auto_replan_on_soc_change": "Genplanlæg ved enhver SoC-ændring",
+          "min_soc_threshold": "Oplad kun hvis SoC er under (%) — 100 deaktiverer"
         }
       }
     },
@@ -85,7 +86,8 @@
           "default_departure": "Standard-afgangstid",
           "min_minutes_left_in_hour": "Spring nuværende time over hvis under N min. tilbage",
           "auto_replan_on_price_update": "Genplanlæg når priser opdateres",
-          "auto_replan_on_soc_change": "Genplanlæg ved enhver SoC-ændring"
+          "auto_replan_on_soc_change": "Genplanlæg ved enhver SoC-ændring",
+          "min_soc_threshold": "Oplad kun hvis SoC er under (%) — 100 deaktiverer"
         }
       }
     },
