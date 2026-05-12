@@ -115,45 +115,13 @@ automation:
 
 ### Lovelace card
 
-A four-block card built from HA's built-in cards: status + master toggle,
-charge-window timeline with prices, estimated cost, and action buttons.
-Uses attributes on `sensor.daily_planned_hours` (`hours`, `hour_prices`,
-`estimated_cost`, `cost_unit`).
+The recommended way to use this integration is the companion
+[Smart EV Charging Card](https://github.com/twarberg/lovelace-ev-smart-charging-card)
+— a custom card with status, a 24h price/plan timeline, history,
+SoC trend, and inline controls. Install it from HACS → Frontend.
 
-Three prerequisites:
-
-1. **Device ID.** Open Settings → Devices & Services → Smart EV Charging →
-   click the device → the URL ends in `…&device=<id>`. Paste this into the
-   YAML where it says `REPLACE_WITH_DEVICE_ID`.
-2. **A time helper for the one-off button.** Settings → Devices & Services →
-   Helpers → Create Helper → Date and/or time → "Time only" → name it
-   `EV one-off departure` (entity will be `input_datetime.ev_one_off_departure`).
-3. **An automation** that applies the override whenever the helper
-   changes. Lovelace button cards don't process Jinja in `tap_action.data`,
-   but automation actions do. With this, you simply edit the time helper
-   from the card and the override is applied — no separate "Set" button.
-
-   ```yaml
-   automation:
-     - alias: EV — apply one-off departure on helper change
-       trigger:
-         - platform: state
-           entity_id: input_datetime.ev_one_off_departure
-       condition:
-         - condition: template
-           value_template: >-
-             {{ trigger.from_state is not none and
-                trigger.to_state.state not in ('unknown', 'unavailable') }}
-       action:
-         - service: smart_ev_charging.set_one_off_departure
-           target:
-             device_id: REPLACE_WITH_DEVICE_ID
-           data:
-             departure_time: "{{ states('input_datetime.ev_one_off_departure') }}"
-   ```
-
-   Reload automations after adding (Developer Tools → YAML → Reload
-   Automations).
+The legacy built-in-cards-only recipe below still works if you'd rather
+avoid a custom card.
 
 ```yaml
 type: vertical-stack
