@@ -20,6 +20,7 @@ from .const import (
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_STATUS_ENTITY,
+    CONF_CONTIGUOUS_BLOCK,
     CONF_DEFAULT_DEPARTURE,
     CONF_DEPARTURE_ENTITY,
     CONF_END_FIELD,
@@ -37,6 +38,7 @@ from .const import (
     DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE,
     DEFAULT_BATTERY_KWH,
     DEFAULT_CHARGER_KW,
+    DEFAULT_CONTIGUOUS_BLOCK,
     DEFAULT_DEPARTURE_TIME,
     DEFAULT_END_FIELD,
     DEFAULT_MIN_MINUTES_LEFT,
@@ -165,6 +167,9 @@ _DEFAULTS_SCHEMA = vol.Schema(
         ): selector.NumberSelector(
             selector.NumberSelectorConfig(min=0, max=100, step=1, mode=_NM)
         ),
+        vol.Optional(
+            CONF_CONTIGUOUS_BLOCK, default=DEFAULT_CONTIGUOUS_BLOCK
+        ): selector.BooleanSelector(),
     }
 )
 
@@ -369,5 +374,9 @@ class SmartEVOptionsFlow(config_entries.OptionsFlow):
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=0, max=100, step=1, mode=_NM)
                 ),
+                vol.Optional(
+                    CONF_CONTIGUOUS_BLOCK,
+                    default=d(CONF_CONTIGUOUS_BLOCK, DEFAULT_CONTIGUOUS_BLOCK),
+                ): selector.BooleanSelector(),
             }
         )
