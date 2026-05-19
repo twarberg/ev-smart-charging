@@ -63,6 +63,132 @@ def test_picks_three_cheapest_overnight(prices: list[PriceSlot]) -> None:
     assert plan.window_size == 14
 
 
+def test_contiguous_picks_cheapest_consecutive_window() -> None:
+    """contiguous=True picks the cheapest run-of-N, not the globally cheapest N.
+
+    Layout: 00:0.3, 01:1.0, 02:0.2, 03:1.0, 04:0.1, 05:0.4, 06:0.5
+      Scatter cheapest 3 = {00,02,04} sum=0.6 (NOT contiguous).
+      Contiguous 3-window sums:
+        00..02 = 1.5
+        01..03 = 2.2
+        02..04 = 1.3
+        03..05 = 1.5
+        04..06 = 1.0  ← cheapest contiguous block
+    """
+    cph = ZoneInfo("Europe/Copenhagen")
+    base = datetime(2026, 5, 10, 0, 0, tzinfo=cph)
+    offsets = [0.3, 1.0, 0.2, 1.0, 0.1, 0.4, 0.5]
+    prices = [
+        PriceSlot(
+            start=base + timedelta(hours=i),
+            end=base + timedelta(hours=i + 1),
+            price=offsets[i],
+        )
+        for i in range(len(offsets))
+    ]
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=3,
+            departure=base + timedelta(hours=12),
+            now=base - timedelta(minutes=1),
+            contiguous=True,
+        )
+    )
+    assert plan.status == "ok"
+    assert list(plan.selected_starts) == [
+        base + timedelta(hours=4),
+        base + timedelta(hours=5),
+        base + timedelta(hours=6),
+    ]
+    assert plan.selected_prices == (0.1, 0.4, 0.5)
+
+
+def test_contiguous_tie_breaker_picks_earliest() -> None:
+    """When two contiguous windows have equal sum, the earliest start wins."""
+    cph = ZoneInfo("Europe/Copenhagen")
+    base = datetime(2026, 5, 10, 0, 0, tzinfo=cph)
+    # Two flat-priced blocks separated by a spike — both 2-windows sum to 2.0.
+    offsets = [1.0, 1.0, 9.0, 1.0, 1.0]
+    prices = [
+        PriceSlot(
+            start=base + timedelta(hours=i),
+            end=base + timedelta(hours=i + 1),
+            price=offsets[i],
+        )
+        for i in range(len(offsets))
+    ]
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=2,
+            departure=base + timedelta(hours=12),
+            now=base - timedelta(minutes=1),
+            contiguous=True,
+        )
+    )
+    assert list(plan.selected_starts) == [base, base + timedelta(hours=1)]
+
+
+def test_contiguous_partial_returns_whole_window() -> None:
+    """Window shorter than slots_needed: entire window is one contiguous block."""
+    cph = ZoneInfo("Europe/Copenhagen")
+    base = datetime(2026, 5, 10, 18, 0, tzinfo=cph)
+    offsets = [5.0, 4.0, 6.0]
+    prices = [
+        PriceSlot(
+            start=base + timedelta(hours=i),
+            end=base + timedelta(hours=i + 1),
+            price=offsets[i],
+        )
+        for i in range(3)
+    ]
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=10,
+            departure=base + timedelta(hours=3),
+            now=base - timedelta(minutes=1),
+            contiguous=True,
+        )
+    )
+    assert plan.status == "partial"
+    assert len(plan.selected_starts) == 3
+    assert list(plan.selected_starts) == [
+        base, base + timedelta(hours=1), base + timedelta(hours=2)
+    ]
+
+
+def test_contiguous_false_matches_legacy_scatter() -> None:
+    """contiguous=False keeps the global cheapest-N picker."""
+    cph = ZoneInfo("Europe/Copenhagen")
+    base = datetime(2026, 5, 10, 0, 0, tzinfo=cph)
+    offsets = [0.3, 1.0, 0.2, 1.0, 0.1, 0.4, 0.5]
+    prices = [
+        PriceSlot(
+            start=base + timedelta(hours=i),
+            end=base + timedelta(hours=i + 1),
+            price=offsets[i],
+        )
+        for i in range(len(offsets))
+    ]
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=3,
+            departure=base + timedelta(hours=12),
+            now=base - timedelta(minutes=1),
+            contiguous=False,
+        )
+    )
+    # Global cheapest 3 = hours 0, 2, 4 (prices 0.3, 0.2, 0.1) — NOT contiguous.
+    assert set(plan.selected_starts) == {
+        base,
+        base + timedelta(hours=2),
+        base + timedelta(hours=4),
+    }
+
+
 def test_no_data_when_prices_empty() -> None:
     plan = make_plan(
         PlanInput(
@@ -296,6 +422,7 @@ def test_picker_optimality(count: int, slots: int, delta_hours: int, seed: int) 
             slots_needed=slots,
             departure=departure,
             now=datetime(2026, 5, 10, 0, 0, tzinfo=CPH) - timedelta(minutes=1),
+            contiguous=False,
         )
     )
     if plan.status == "no_data":
@@ -313,3 +440,52 @@ def test_picker_optimality(count: int, slots: int, delta_hours: int, seed: int) 
     for sub in itertools.combinations(window, len(selected)):
         sub_total = sum(s.price for s in sub)
         assert sel_total <= sub_total + 1e-9
+
+
+@given(
+    count=st.integers(min_value=1, max_value=24),
+    slots=st.integers(min_value=1, max_value=12),
+    delta_hours=st.integers(min_value=2, max_value=36),
+    seed=st.integers(min_value=0, max_value=10_000),
+)
+@settings(max_examples=80, deadline=None)
+def test_contiguous_picker_optimality(
+    count: int, slots: int, delta_hours: int, seed: int
+) -> None:
+    """contiguous=True picks the lowest-summed contiguous run-of-N in the window."""
+    import random
+
+    rng = random.Random(seed)
+    offsets = [rng.uniform(0.1, 5.0) for _ in range(count)]
+    prices = _build_prices(start_hour=0, count=count, offsets=offsets)
+    departure = datetime(2026, 5, 10, 0, 0, tzinfo=CPH) + timedelta(hours=delta_hours)
+    plan = make_plan(
+        PlanInput(
+            prices=prices,
+            slots_needed=slots,
+            departure=departure,
+            now=datetime(2026, 5, 10, 0, 0, tzinfo=CPH) - timedelta(minutes=1),
+            contiguous=True,
+        )
+    )
+    if plan.status == "no_data":
+        assert plan.selected_starts == ()
+        return
+    assert list(plan.selected_starts) == sorted(plan.selected_starts)
+    window = [
+        p
+        for p in prices
+        if datetime(2026, 5, 10, 0, 0, tzinfo=CPH) <= p.start < plan.deadline
+    ]
+    selected = [p for p in prices if p.start in plan.selected_starts]
+    assert len(selected) == min(slots, len(window))
+    # When the window is smaller than slots_needed, the picker returns the whole
+    # window; no optimality assertion beyond that.
+    if len(window) < slots:
+        assert {p.start for p in selected} == {p.start for p in window}
+        return
+    sel_total = sum(s.price for s in selected)
+    # Selected block must be no more expensive than any other contiguous N-block.
+    for i in range(0, len(window) - slots + 1):
+        alt_total = sum(p.price for p in window[i : i + slots])
+        assert sel_total <= alt_total + 1e-9

@@ -24,6 +24,7 @@ class PlanInput:
     departure: datetime
     now: datetime
     min_minutes_left_in_hour: int = 15
+    contiguous: bool = True
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,25 @@ class Plan:
     was_extended: bool = False
     window_size: int = 0
     status: PlanStatus = "no_data"
+
+
+def _pick_contiguous(
+    window: list[PriceSlot], n: int
+) -> list[PriceSlot]:
+    """Return the contiguous n-slot block with the lowest summed price.
+
+    Tie-breaker: earliest start (we iterate left-to-right and update only on a
+    strict-less-than, so the first occurrence wins).
+    """
+    best_i = 0
+    best_sum = sum(s.price for s in window[:n])
+    rolling = best_sum
+    for i in range(1, len(window) - n + 1):
+        rolling += window[i + n - 1].price - window[i - 1].price
+        if rolling < best_sum:
+            best_sum = rolling
+            best_i = i
+    return window[best_i : best_i + n]
 
 
 def make_plan(inp: PlanInput) -> Plan:
@@ -61,8 +81,21 @@ def make_plan(inp: PlanInput) -> Plan:
 
     window = [s for s in prices if effective_start <= s.start < deadline]
     effective_slots = min(slots_needed, len(window))
-    cheapest = sorted(window, key=lambda s: s.price)[:effective_slots]
-    chronological = sorted(cheapest, key=lambda s: s.start)
+
+    if effective_slots == 0:
+        chronological: list[PriceSlot] = []
+    elif inp.contiguous and len(window) >= slots_needed:
+        # Window has room for the full block — slide to find the cheapest.
+        chronological = _pick_contiguous(window, slots_needed)
+    elif inp.contiguous:
+        # Window shorter than slots_needed: the whole window IS one contiguous
+        # block (already sorted).
+        chronological = list(window)
+    else:
+        # Legacy scatter behaviour: globally-cheapest N slots, then sort.
+        cheapest = sorted(window, key=lambda s: s.price)[:effective_slots]
+        chronological = sorted(cheapest, key=lambda s: s.start)
+
     selected_starts = tuple(s.start for s in chronological)
     selected_prices = tuple(s.price for s in chronological)
 
