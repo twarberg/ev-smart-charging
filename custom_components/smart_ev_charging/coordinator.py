@@ -23,6 +23,7 @@ from .const import (
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_STATUS_ENTITY,
+    CONF_CONTIGUOUS_BLOCK,
     CONF_DEFAULT_DEPARTURE,
     CONF_DEPARTURE_ENTITY,
     CONF_END_FIELD,
@@ -40,6 +41,7 @@ from .const import (
     DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE,
     DEFAULT_BATTERY_KWH,
     DEFAULT_CHARGER_KW,
+    DEFAULT_CONTIGUOUS_BLOCK,
     DEFAULT_DEPARTURE_TIME,
     DEFAULT_MIN_MINUTES_LEFT,
     DEFAULT_MIN_SOC_THRESHOLD,
@@ -78,6 +80,7 @@ class CoordinatorData:
     slots_needed_source: str  # "calculated" or "override"
     min_soc_threshold: float  # 0-100; 100 = gate disabled
     min_soc_gate_active: bool  # True iff soc is known and soc >= threshold (and gate enabled)
+    contiguous_block: bool  # mirrors CONF_CONTIGUOUS_BLOCK; default True
     effective_departure_time: str  # "HH:MM"
     effective_departure_source: str  # "car" / "helper" / "default"
     estimated_cost: float | None  # sum(hour_kwh[i] * selected_prices[i]), or None
@@ -387,6 +390,9 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         prices = self._price_source.get_slots()
         slots_needed = self._slots_needed(car)
         deadline, departure_source = self._resolve_departure(car, now)
+        contiguous_block = bool(
+            self._merged.get(CONF_CONTIGUOUS_BLOCK, DEFAULT_CONTIGUOUS_BLOCK)
+        )
         plan = make_plan(
             PlanInput(
                 prices=prices,
@@ -396,6 +402,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 min_minutes_left_in_hour=int(
                     self._merged.get(CONF_MIN_MINUTES_LEFT_IN_HOUR, DEFAULT_MIN_MINUTES_LEFT)
                 ),
+                contiguous=contiguous_block,
             )
         )
 
@@ -475,6 +482,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             slots_needed_source=slots_needed_source,
             min_soc_threshold=min_soc_threshold,
             min_soc_gate_active=min_soc_gate_active,
+            contiguous_block=contiguous_block,
             effective_departure_time=effective_departure_time,
             effective_departure_source=departure_source,
             estimated_cost=estimated_cost,

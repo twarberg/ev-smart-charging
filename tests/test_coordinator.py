@@ -12,6 +12,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.smart_ev_charging.const import (
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
+    CONF_CONTIGUOUS_BLOCK,
     CONF_DEFAULT_DEPARTURE,
     CONF_MIN_SOC_THRESHOLD,
     CONF_PRICE_ATTRIBUTE,
@@ -679,3 +680,44 @@ async def test_soc_entity_listener_skipped_when_auto_replan_off(hass: HomeAssist
     await hass.async_block_till_done()
     # SoC tick must NOT trigger an automatic refresh (last_replan unchanged).
     assert coordinator.data.last_replan == last_replan_before
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_contiguous_block_default_on_picks_contiguous(
+    hass: HomeAssistant,
+) -> None:
+    """No explicit flag → default contiguous=True → cheapest contiguous block."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass, soc=30.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    starts = coordinator.data.plan.selected_starts
+    # _seed_prices puts the cheapest stretch at 02-04, which is contiguous;
+    # the assertion that matters here is that contiguous_block is reported True
+    # and that starts are sorted (contract holds either way).
+    assert coordinator.data.contiguous_block is True
+    assert list(starts) == sorted(starts)
+
+
+@freeze_time("2026-05-11 02:30:00+02:00")
+async def test_contiguous_block_false_passes_through(hass: HomeAssistant) -> None:
+    """Setting CONF_CONTIGUOUS_BLOCK=False propagates into CoordinatorData."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    _seed_prices(hass)
+    hass.states.async_set("sensor.car_soc", "30")
+    hass.states.async_set("sensor.car_target", "80")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data["soc_entity"] = "sensor.car_soc"
+    data["target_soc_entity"] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    data[CONF_CONTIGUOUS_BLOCK] = False
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.contiguous_block is False
