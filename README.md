@@ -39,6 +39,11 @@ Notable options on the **Defaults** step:
   changing the target.
 - **Replan when prices update** / **Replan on every SoC change** —
   automatic replanning triggers.
+- **Charge in one contiguous block** *(default on)* — when on, the planner
+  picks one back-to-back block of `slots_needed` cheap hours finishing before
+  departure. When off, it picks the N globally-cheapest hours regardless of
+  order. Contiguous mode avoids charger on/off cycling but can be slightly
+  more expensive on days with an isolated bargain hour.
 - **Skip current hour if less than N minutes remain** — avoid scheduling a
   near-empty leading slot.
 
@@ -72,6 +77,7 @@ state attributes:
 | `soc_entity` / `target_soc_entity` | The car's SoC + target SoC entity (if configured) |
 | `min_soc_threshold` | The minimum-SoC gate ceiling, 0–100 (`100` = gate disabled) |
 | `min_soc_gate_active` | `true` while SoC is known and ≥ `min_soc_threshold` |
+| `contiguous_block` | `true` when the planner is configured to pick one back-to-back block of cheap hours (default) |
 | `override_mode` / `override_until` | `force` / `skip` and its expiry, if active |
 
 ### Per-slot energy on `sensor.<n>_planned_hours`
