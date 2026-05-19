@@ -73,6 +73,7 @@ class PlanStatusSensor(_Base):
             "target_soc_entity": cfg.get(CONF_TARGET_SOC_ENTITY),
             "min_soc_threshold": data.min_soc_threshold,
             "min_soc_gate_active": data.min_soc_gate_active,
+            "contiguous_block": data.contiguous_block,
         }
 
 

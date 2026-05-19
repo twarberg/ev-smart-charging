@@ -115,3 +115,35 @@ async def test_planned_hours_sensor_exposes_hour_kwh(hass: HomeAssistant) -> Non
     else:
         # Zero selected hours is still valid; hour_kwh must be an empty list
         assert hour_kwh == []
+
+
+async def test_plan_status_sensor_exposes_contiguous_block_default(
+    hass: HomeAssistant,
+) -> None:
+    """Default-on flag must surface as contiguous_block=True on plan_status."""
+    _seed_prices(hass)
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=_base_entry_data())
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    state = hass.states.get("sensor.daily_plan_status")
+    assert state is not None
+    assert state.attributes["contiguous_block"] is True
+
+
+async def test_plan_status_sensor_exposes_contiguous_block_false(
+    hass: HomeAssistant,
+) -> None:
+    """When CONF_CONTIGUOUS_BLOCK is false, the attribute is False."""
+    from custom_components.smart_ev_charging.const import CONF_CONTIGUOUS_BLOCK
+
+    _seed_prices(hass)
+    data = _base_entry_data()
+    data[CONF_CONTIGUOUS_BLOCK] = False
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    state = hass.states.get("sensor.daily_plan_status")
+    assert state is not None
+    assert state.attributes["contiguous_block"] is False
