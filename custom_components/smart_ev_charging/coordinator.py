@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from math import ceil
 from typing import Any, Literal
@@ -118,6 +118,8 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         )
         self._unsub: list[Callable[[], None]] = []
         self._last_plug_known: bool = False
+        self._last_soc_known: float | None = None
+        self._last_target_known: float | None = None
         self._master_enabled: bool = True
         self._slots_override: int = 3
         self._target_soc_override: float = 80.0
@@ -260,6 +262,29 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         deadline = today if today > now else today + timedelta(days=1)
         return deadline, source
 
+    def _debounce_car_levels(self, car: CarState) -> CarState:
+        """Hold last-known SoC and target across transient unavailable blips.
+
+        Mercedes Me (and other vendors) sometimes drop SoC + target to
+        ``unavailable`` for a few hundred ms. When SoC is unknown the
+        planner falls back to slots_override=3 and can briefly select the
+        current hour, flipping charge_now ON despite the target already
+        being met.
+        """
+        soc = car.soc_percent
+        target = car.target_soc_percent
+        if soc is None and self._last_soc_known is not None:
+            soc = self._last_soc_known
+        elif soc is not None:
+            self._last_soc_known = soc
+        if target is None and self._last_target_known is not None:
+            target = self._last_target_known
+        elif target is not None:
+            self._last_target_known = target
+        if soc is car.soc_percent and target is car.target_soc_percent:
+            return car
+        return replace(car, soc_percent=soc, target_soc_percent=target)
+
     def _debounce_plug(self, car: CarState) -> bool:
         raw = car.plug_raw_state
         if raw is None:
@@ -381,6 +406,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if self._one_off_departure is not None and now >= self._one_off_departure[1]:
             self._one_off_departure = None
         car = read_car_state(self.hass, self._car_config)  # type: ignore[arg-type]
+        car = self._debounce_car_levels(car)
         debounced_plugged = self._debounce_plug(car)
         # Freeze plan mid-charge: as SoC rises, _slots_needed shrinks and the
         # planner would relocate the chosen block to a later (cheaper) slot,

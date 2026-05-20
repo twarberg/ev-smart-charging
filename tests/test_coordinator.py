@@ -785,3 +785,47 @@ async def test_contiguous_block_false_passes_through(hass: HomeAssistant) -> Non
     await hass.async_block_till_done()
     coordinator = hass.data[DOMAIN][entry.entry_id]
     assert coordinator.data.contiguous_block is False
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_soc_debouncer_holds_through_unavailable(hass: HomeAssistant) -> None:
+    """Transient soc/target unavailable must not trigger a spurious charge.
+
+    Repro for prod incident: Mercedes SoC and max-SoC sensors both flipped
+    to ``unavailable`` for ~600 ms. With SoC unknown, _slots_needed falls
+    back to slots_override=3 and the planner picks the current hour, so
+    charge_now briefly flips ON. The debounce keeps last-known values
+    until the sensor returns to a concrete number.
+    """
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass, soc=100.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is False
+    assert coordinator.data.car_state.soc_percent == 100.0
+    assert coordinator.data.car_state.target_soc_percent == 80.0
+
+    hass.states.async_set("sensor.car_soc", "unavailable")
+    hass.states.async_set("sensor.car_target", "unavailable")
+    await coordinator.async_refresh()
+
+    assert coordinator.data.car_state.soc_percent == 100.0
+    assert coordinator.data.car_state.target_soc_percent == 80.0
+    assert coordinator.data.charge_now is False
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_soc_debouncer_releases_on_concrete_value(hass: HomeAssistant) -> None:
+    """A real new SoC reading replaces the held last-known value."""
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    entry = await _setup_with_soc(hass, soc=100.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    hass.states.async_set("sensor.car_soc", "unavailable")
+    await coordinator.async_refresh()
+    assert coordinator.data.car_state.soc_percent == 100.0
+
+    hass.states.async_set("sensor.car_soc", "50")
+    await coordinator.async_refresh()
+    assert coordinator.data.car_state.soc_percent == 50.0
