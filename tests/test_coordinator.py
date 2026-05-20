@@ -682,6 +682,75 @@ async def test_soc_entity_listener_skipped_when_auto_replan_off(hass: HomeAssist
     assert coordinator.data.last_replan == last_replan_before
 
 
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_plan_frozen_during_active_charge_does_not_drop_current_hour(
+    hass: HomeAssistant,
+) -> None:
+    """Drift guard: while charging, a replan must not drop the current hour.
+
+    Prices set so that 04:00 is cheaper than 03:00. Initial SoC produces a
+    2-slot plan starting at 03:00 (cheapest contiguous 2-block = 03:00+04:00,
+    sum 1.30 < 04:00+05:00 sum 1.40). Mid-charge the SoC rises and would
+    normally shrink slots_needed to 1, repointing the planner at the single
+    cheapest slot (04:00) and dropping 03:00 — pausing the charger mid-block.
+
+    With the freeze, the integration keeps the current plan as long as
+    _last_charge_now is True and the car is plugged in.
+    """
+    async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    hass.states.async_set(
+        "sensor.fake_prices",
+        "0.70",
+        {
+            "unit_of_measurement": "DKK/kWh",
+            "prices": [
+                {"start": "2026-05-11T03:00:00+02:00", "end": "2026-05-11T04:00:00+02:00", "price": 0.70},
+                {"start": "2026-05-11T04:00:00+02:00", "end": "2026-05-11T05:00:00+02:00", "price": 0.60},
+                {"start": "2026-05-11T05:00:00+02:00", "end": "2026-05-11T06:00:00+02:00", "price": 0.80},
+                {"start": "2026-05-11T06:00:00+02:00", "end": "2026-05-11T07:00:00+02:00", "price": 1.20},
+                {"start": "2026-05-11T07:00:00+02:00", "end": "2026-05-11T08:00:00+02:00", "price": 1.50},
+            ],
+        },
+    )
+    hass.states.async_set("switch.charger", "off", {})
+    hass.states.async_set("sensor.car_soc", "50")
+    hass.states.async_set("sensor.car_target", "100")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data["soc_entity"] = "sensor.car_soc"
+    data["target_soc_entity"] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    data[CONF_CONTIGUOUS_BLOCK] = True
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Initial plan: slots_needed=ceil(0.5*31.2/11*1.10)=ceil(1.56)=2.
+    # Cheapest contiguous 2-block in [03,08) is 03:00+04:00.
+    assert coordinator.data.charge_now is True
+    starts_before = {s.isoformat() for s in coordinator.data.plan.selected_starts}
+    assert "2026-05-11T03:00:00+02:00" in starts_before
+    assert coordinator.data.slots_needed == 2
+
+    # Simulate a heartbeat / state-change replan partway through the 03:00
+    # slot, after SoC has risen. Without the freeze, slots_needed would drop
+    # to 1 and the planner would relocate the block to 04:00.
+    hass.states.async_set("sensor.car_soc", "85")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    starts_after = {s.isoformat() for s in coordinator.data.plan.selected_starts}
+    assert "2026-05-11T03:00:00+02:00" in starts_after, (
+        f"current hour dropped from plan during active charge: {starts_after}"
+    )
+    assert coordinator.data.charge_now is True
+
+
 @freeze_time("2026-05-11 02:30:00+02:00")
 async def test_contiguous_block_default_on_picks_contiguous(
     hass: HomeAssistant,

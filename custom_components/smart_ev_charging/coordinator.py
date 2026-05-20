@@ -387,24 +387,40 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             self._one_off_departure = None
         car = read_car_state(self.hass, self._car_config)  # type: ignore[arg-type]
         debounced_plugged = self._debounce_plug(car)
-        prices = self._price_source.get_slots()
-        slots_needed = self._slots_needed(car)
-        deadline, departure_source = self._resolve_departure(car, now)
-        contiguous_block = bool(
-            self._merged.get(CONF_CONTIGUOUS_BLOCK, DEFAULT_CONTIGUOUS_BLOCK)
+        # Freeze plan mid-charge: as SoC rises, _slots_needed shrinks and the
+        # planner would relocate the chosen block to a later (cheaper) slot,
+        # dropping the current hour and pausing the charger mid-block.
+        freeze_plan = (
+            self.data is not None
+            and self._last_charge_now
+            and debounced_plugged
         )
-        plan = make_plan(
-            PlanInput(
-                prices=prices,
-                slots_needed=slots_needed,
-                departure=deadline,
-                now=now,
-                min_minutes_left_in_hour=int(
-                    self._merged.get(CONF_MIN_MINUTES_LEFT_IN_HOUR, DEFAULT_MIN_MINUTES_LEFT)
-                ),
-                contiguous=contiguous_block,
+        if freeze_plan:
+            assert self.data is not None
+            plan = self.data.plan
+            slots_needed = self.data.slots_needed
+            contiguous_block = self.data.contiguous_block
+            deadline = plan.deadline
+            departure_source = self.data.effective_departure_source
+        else:
+            prices = self._price_source.get_slots()
+            slots_needed = self._slots_needed(car)
+            deadline, departure_source = self._resolve_departure(car, now)
+            contiguous_block = bool(
+                self._merged.get(CONF_CONTIGUOUS_BLOCK, DEFAULT_CONTIGUOUS_BLOCK)
             )
-        )
+            plan = make_plan(
+                PlanInput(
+                    prices=prices,
+                    slots_needed=slots_needed,
+                    departure=deadline,
+                    now=now,
+                    min_minutes_left_in_hour=int(
+                        self._merged.get(CONF_MIN_MINUTES_LEFT_IN_HOUR, DEFAULT_MIN_MINUTES_LEFT)
+                    ),
+                    contiguous=contiguous_block,
+                )
+            )
 
         # Spec § 5.8: clear any active override the moment the car is unplugged.
         # Done before _evaluate_charge_now so the force-override branch can't fire
