@@ -18,7 +18,6 @@ from .car_state import CarState, CarStateConfig, read_car_state
 from .const import (
     CONF_ACTIVELY_CHARGING_VALUES,
     CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
-    CONF_AUTO_REPLAN_ON_SOC_CHANGE,
     CONF_BATTERY_KWH,
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
@@ -38,7 +37,6 @@ from .const import (
     CONF_TARGET_SOC_ENTITY,
     DEFAULT_ACTIVELY_CHARGING_VALUES,
     DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE,
-    DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE,
     DEFAULT_BATTERY_KWH,
     DEFAULT_CHARGER_KW,
     DEFAULT_CONTIGUOUS_BLOCK,
@@ -133,16 +131,13 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         replan_on_price = bool(
             self._merged.get(CONF_AUTO_REPLAN_ON_PRICE_UPDATE, DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE)
         )
-        replan_on_soc = bool(
-            self._merged.get(CONF_AUTO_REPLAN_ON_SOC_CHANGE, DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE)
-        )
         ids: list[str | None] = []
         if replan_on_price:
             ids.append(self._merged.get(CONF_PRICE_ENTITY))
-        if replan_on_soc:
-            ids.append(self._merged.get(CONF_SOC_ENTITY))
         # Target SoC, charging status, and departure are control inputs —
-        # changes there should always trigger a replan regardless of flags.
+        # changes there should always trigger a replan. SoC ticks do not —
+        # the heartbeat picks up new SoC, and replans during active charge
+        # are absorbed by the plan-freeze in _async_update_data.
         ids.append(self._merged.get(CONF_TARGET_SOC_ENTITY))
         ids.append(self._merged.get(CONF_CHARGING_STATUS_ENTITY))
         ids.append(self._merged.get(CONF_DEPARTURE_ENTITY))

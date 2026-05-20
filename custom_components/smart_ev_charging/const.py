@@ -27,7 +27,6 @@ CONF_BATTERY_KWH: Final = "battery_kwh"
 CONF_DEFAULT_DEPARTURE: Final = "default_departure"
 CONF_MIN_MINUTES_LEFT_IN_HOUR: Final = "min_minutes_left_in_hour"
 CONF_AUTO_REPLAN_ON_PRICE_UPDATE: Final = "auto_replan_on_price_update"
-CONF_AUTO_REPLAN_ON_SOC_CHANGE: Final = "auto_replan_on_soc_change"
 CONF_MIN_SOC_THRESHOLD: Final = "min_soc_threshold"
 
 # Defaults
@@ -44,7 +43,6 @@ DEFAULT_ACTIVELY_CHARGING_VALUES: Final = ["0", "charging", "Charging", "CHARGIN
 DEFAULT_DEPARTURE_TIME: Final = "08:00:00"
 DEFAULT_MIN_MINUTES_LEFT: Final = 15
 DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE: Final = True
-DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE: Final = False
 DEFAULT_MIN_SOC_THRESHOLD: Final = 100
 
 # Heartbeat

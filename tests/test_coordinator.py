@@ -644,14 +644,11 @@ async def test_plan_updated_event_deduped_when_no_change(hass: HomeAssistant) ->
     ), "second refresh with no change must not fire plan_updated again"
 
 
-async def test_soc_entity_listener_skipped_when_auto_replan_off(hass: HomeAssistant) -> None:
-    """auto_replan_on_soc_change=False must NOT attach a listener to soc_entity.
+async def test_soc_entity_tick_does_not_trigger_replan(hass: HomeAssistant) -> None:
+    """SoC entity is never watched for replans; only heartbeat + control inputs are.
 
-    Verified by snapshotting last_replan, ticking the SoC entity, and confirming
-    last_replan is unchanged (no automatic refresh occurred).
+    Snapshot last_replan, tick the SoC entity, confirm last_replan is unchanged.
     """
-    from custom_components.smart_ev_charging.const import CONF_AUTO_REPLAN_ON_SOC_CHANGE
-
     async_mock_service(hass, "switch", "turn_on")
     async_mock_service(hass, "switch", "turn_off")
     _seed_prices(hass)
@@ -666,7 +663,6 @@ async def test_soc_entity_listener_skipped_when_auto_replan_off(hass: HomeAssist
             "charging_status_entity": "sensor.car_status",
             "plug_unplugged_values": ["3"],
             "actively_charging_values": ["0"],
-            CONF_AUTO_REPLAN_ON_SOC_CHANGE: False,
         }
     )
     entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
@@ -678,7 +674,6 @@ async def test_soc_entity_listener_skipped_when_auto_replan_off(hass: HomeAssist
     last_replan_before = coordinator.data.last_replan
     hass.states.async_set("sensor.car_soc", "31")
     await hass.async_block_till_done()
-    # SoC tick must NOT trigger an automatic refresh (last_replan unchanged).
     assert coordinator.data.last_replan == last_replan_before
 
 

@@ -15,7 +15,6 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ACTIVELY_CHARGING_VALUES,
     CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
-    CONF_AUTO_REPLAN_ON_SOC_CHANGE,
     CONF_BATTERY_KWH,
     CONF_CHARGER_KW,
     CONF_CHARGER_SWITCH,
@@ -35,7 +34,6 @@ from .const import (
     CONF_TARGET_SOC_ENTITY,
     DEFAULT_ACTIVELY_CHARGING_VALUES,
     DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE,
-    DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE,
     DEFAULT_BATTERY_KWH,
     DEFAULT_CHARGER_KW,
     DEFAULT_CONTIGUOUS_BLOCK,
@@ -158,9 +156,6 @@ _DEFAULTS_SCHEMA = vol.Schema(
         ),
         vol.Optional(
             CONF_AUTO_REPLAN_ON_PRICE_UPDATE, default=DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE
-        ): selector.BooleanSelector(),
-        vol.Optional(
-            CONF_AUTO_REPLAN_ON_SOC_CHANGE, default=DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE
         ): selector.BooleanSelector(),
         vol.Optional(
             CONF_MIN_SOC_THRESHOLD, default=DEFAULT_MIN_SOC_THRESHOLD
@@ -360,12 +355,6 @@ class SmartEVOptionsFlow(config_entries.OptionsFlow):
                     default=d(
                         CONF_AUTO_REPLAN_ON_PRICE_UPDATE,
                         DEFAULT_AUTO_REPLAN_ON_PRICE_UPDATE,
-                    ),
-                ): selector.BooleanSelector(),
-                vol.Optional(
-                    CONF_AUTO_REPLAN_ON_SOC_CHANGE,
-                    default=d(
-                        CONF_AUTO_REPLAN_ON_SOC_CHANGE, DEFAULT_AUTO_REPLAN_ON_SOC_CHANGE
                     ),
                 ): selector.BooleanSelector(),
                 vol.Optional(
