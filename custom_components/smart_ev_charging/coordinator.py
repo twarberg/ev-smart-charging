@@ -156,6 +156,15 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             self._unsub.append(
                 async_track_state_change_event(self.hass, [soc_id], self._handle_soc_change)
             )
+        # Watch the physical charger switch so an external flip from on -> off
+        # while we intend to charge is treated as a user cancel.
+        charger_switch_id = self._merged.get(CONF_CHARGER_SWITCH)
+        if charger_switch_id:
+            self._unsub.append(
+                async_track_state_change_event(
+                    self.hass, [charger_switch_id], self._handle_charger_switch_change
+                )
+            )
 
     @callback
     def _handle_state_change(self, _event: Event[EventStateChangedData]) -> None:
@@ -181,6 +190,25 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if last is not None and abs(new_soc - last) < SOC_REPLAN_DELTA:
             return
         self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _handle_charger_switch_change(self, event: Event[EventStateChangedData]) -> None:
+        """Detect an external off-flip while we intend to charge.
+
+        Treated as a user cancel: set an indefinite skip override so the
+        coordinator does not re-assert the switch via closed-loop reconcile.
+        Auto-clears on unplug (same as force override). UI / automations can
+        clear it via the resume_plan service.
+        """
+        if not self._last_charge_now:
+            return
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if old_state is None or new_state is None:
+            return
+        if old_state.state != "on" or new_state.state != "off":
+            return
+        self.apply_cancel()
 
     async def async_unload(self) -> None:
         for unsub in self._unsub:
@@ -209,9 +237,29 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self.hass.async_create_task(self.async_request_refresh())
 
     def apply_override(self, mode: Literal["force", "skip"], until: datetime | None) -> None:
-        if mode == "skip" and until is None:
-            raise ValueError("skip override requires a non-None until datetime")
         self._override = ChargeOverride(mode=mode, until=until)
+        self.hass.async_create_task(self.async_request_refresh())
+
+    def apply_cancel(self) -> None:
+        """Apply an indefinite skip override and fire user_cancel STOPPED event.
+
+        Indefinite = until=None. Auto-clears on unplug (existing logic) or via
+        the resume_plan service. Used both by the external-switch-off detector
+        and any future user-initiated cancel surface.
+        """
+        was_charging = self._last_charge_now
+        self._override = ChargeOverride(mode="skip", until=None)
+        self._last_charge_now = False
+        if was_charging:
+            self.hass.bus.async_fire(
+                EVENT_STOPPED,
+                {"entry_id": self.entry.entry_id, "reason": "user_cancel"},
+            )
+        self.hass.async_create_task(self.async_request_refresh())
+
+    def clear_override(self) -> None:
+        """Manually clear any active override and resume normal plan."""
+        self._override = None
         self.hass.async_create_task(self.async_request_refresh())
 
     def apply_one_off_departure(self, departure_time: time | None) -> None:
@@ -361,11 +409,16 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         skip_active = (
             override is not None
             and override.mode == "skip"
-            and override.until is not None
-            and now < override.until
+            and (override.until is None or now < override.until)
         )
         if skip_active:
-            return False, plan.status, "skip"
+            # until=None signals user_cancel (indefinite skip). The status
+            # label "cancelled" lets dashboards conditionally render a resume
+            # button without parsing override attributes.
+            assert override is not None  # narrowed by skip_active
+            label = "cancelled" if override.until is None else plan.status
+            reason = "user_cancel" if override.until is None else "skip"
+            return False, label, reason
 
         if not debounced_plugged:
             return False, "unplugged", "unplugged"

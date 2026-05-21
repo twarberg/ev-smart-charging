@@ -131,6 +131,10 @@
           "description": "TT:MM afgangstid for næste opladningscyklus. Lad være tom for at rydde."
         }
       }
+    },
+    "resume_plan": {
+      "name": "Genoptag plan",
+      "description": "Ryd enhver aktiv tving-eller-annuller override og genoptag den normale opladningsplan."
     }
   },
   "entity": {

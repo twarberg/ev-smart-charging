@@ -135,6 +135,10 @@
           "description": "HH:MM departure time for the next charge cycle. Leave blank to clear."
         }
       }
+    },
+    "resume_plan": {
+      "name": "Resume plan",
+      "description": "Clear any active force or cancel override and resume the normal charging plan."
     }
   },
   "entity": {

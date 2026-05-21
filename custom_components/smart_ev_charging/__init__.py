@@ -17,6 +17,7 @@ from .const import (
     PLATFORMS,
     SERVICE_FORCE_CHARGE_NOW,
     SERVICE_REPLAN,
+    SERVICE_RESUME_PLAN,
     SERVICE_SET_ONE_OFF_DEPARTURE,
     SERVICE_SKIP_UNTIL,
 )
@@ -30,6 +31,7 @@ _SKIP_SCHEMA = vol.Schema({vol.Required("until"): cv.datetime}, extra=vol.ALLOW_
 _ONE_OFF_DEPARTURE_SCHEMA = vol.Schema(
     {vol.Optional("departure_time"): cv.time}, extra=vol.ALLOW_EXTRA
 )
+_RESUME_SCHEMA = vol.Schema({}, extra=vol.ALLOW_EXTRA)
 
 
 def _resolve_coordinators(hass: HomeAssistant, call: ServiceCall) -> list[SmartEVCoordinator]:
@@ -87,6 +89,11 @@ async def _register_services(hass: HomeAssistant) -> None:
             c.apply_one_off_departure(departure_time)
             await c.async_refresh()
 
+    async def _resume(call: ServiceCall) -> None:
+        for c in _resolve_coordinators(hass, call):
+            c.clear_override()
+            await c.async_refresh()
+
     hass.services.async_register(DOMAIN, SERVICE_REPLAN, _replan, schema=_REPLAN_SCHEMA)
     hass.services.async_register(
         DOMAIN, SERVICE_FORCE_CHARGE_NOW, _force, schema=_FORCE_SCHEMA
@@ -98,6 +105,7 @@ async def _register_services(hass: HomeAssistant) -> None:
         _one_off_departure,
         schema=_ONE_OFF_DEPARTURE_SCHEMA,
     )
+    hass.services.async_register(DOMAIN, SERVICE_RESUME_PLAN, _resume, schema=_RESUME_SCHEMA)
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
