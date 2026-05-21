@@ -21,6 +21,7 @@ from custom_components.smart_ev_charging.const import (
     CONF_START_FIELD,
     DOMAIN,
     EVENT_PLAN_UPDATED,
+    EVENT_STARTED,
     EVENT_TARGET_REACHED,
 )
 
@@ -395,14 +396,20 @@ async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant)
         # Advance to 03:30 — should be in the cheapest 2-slot plan (03:00-05:00)
         frozen.move_to("2026-05-11 03:30:00+02:00")
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert coordinator.data.charge_now
         assert any(c.data.get("entity_id") == "switch.charger" for c in turn_on_calls)
+        # Mock service does not flip switch state; simulate the resulting physical
+        # state so the next reconcile reads "on" and only issues turn_off.
+        hass.states.async_set("switch.charger", "on", {})
 
         # Advance past departure — no price data beyond 08:00, so plan has no_data and charger is off
         frozen.move_to("2026-05-11 08:30:00+02:00")
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert not coordinator.data.charge_now
         assert any(c.data.get("entity_id") == "switch.charger" for c in turn_off_calls)
+        hass.states.async_set("switch.charger", "off", {})
 
 
 async def test_service_replan_runs(hass: HomeAssistant) -> None:
@@ -829,3 +836,34 @@ async def test_soc_debouncer_releases_on_concrete_value(hass: HomeAssistant) -> 
     hass.states.async_set("sensor.car_soc", "50")
     await coordinator.async_refresh()
     assert coordinator.data.car_state.soc_percent == 50.0
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_external_switch_flip_self_heals(hass: HomeAssistant) -> None:
+    """If switch flips off externally while intent is on, coordinator re-asserts.
+
+    No second EVENT_STARTED — events fire on intent transitions, not on
+    closed-loop re-asserts.
+    """
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now is True
+    # Simulate the physical switch having been turned on by the initial dispatch.
+    hass.states.async_set("switch.charger", "on", {})
+
+    # Capture fresh mock-service lists and event listener so prior setup noise
+    # is not counted. (_setup_with_soc internally re-registers mock services,
+    # so we must capture after it returns.)
+    turn_on_calls = async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    started_events: list[Any] = []
+    hass.bus.async_listen(EVENT_STARTED, lambda e: started_events.append(e))
+
+    # External flip while intent stays "on".
+    hass.states.async_set("switch.charger", "off", {})
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert len(turn_on_calls) >= 1, "should re-assert turn_on"
+    assert started_events == [], "no extra STARTED fired"

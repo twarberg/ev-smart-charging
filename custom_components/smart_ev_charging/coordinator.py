@@ -357,37 +357,51 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             return "force"
         return "plan"
 
-    async def _apply_charger(
+    async def _async_apply_charger_control(
         self,
         charge_now: bool,
+        old_charge_now: bool,
         stop_reason: str | None,
         prev_soc: float | None,
         car: CarState,
     ) -> None:
+        """Reconcile the physical charger switch against charge_now intent.
+
+        Reads the live switch state so closed-loop healing re-issues turn_on
+        if the switch was flipped externally. STARTED/STOPPED events fire on
+        intent transitions only (not on re-asserts) so external drift does
+        not spam the event bus.
+        """
         switch_id = self._merged[CONF_CHARGER_SWITCH]
-        if charge_now and not self._last_charge_now:
+        switch_state = self.hass.states.get(switch_id)
+        is_physically_on = switch_state is not None and switch_state.state == "on"
+
+        if charge_now and not is_physically_on:
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": switch_id}, blocking=False
             )
-            self.hass.bus.async_fire(
-                EVENT_STARTED,
-                {"entry_id": self.entry.entry_id, "reason": self._start_reason()},
-            )
-        elif not charge_now and self._last_charge_now:
+            if not old_charge_now:
+                self.hass.bus.async_fire(
+                    EVENT_STARTED,
+                    {"entry_id": self.entry.entry_id, "reason": self._start_reason()},
+                )
+        elif not charge_now and is_physically_on:
             await self.hass.services.async_call(
                 "switch", "turn_off", {"entity_id": switch_id}, blocking=False
             )
-            self.hass.bus.async_fire(
-                EVENT_STOPPED,
-                {"entry_id": self.entry.entry_id, "reason": stop_reason or "plan_end"},
-            )
+            if old_charge_now:
+                self.hass.bus.async_fire(
+                    EVENT_STOPPED,
+                    {"entry_id": self.entry.entry_id, "reason": stop_reason or "plan_end"},
+                )
+
         effective_target = (
             car.target_soc_percent
             if car.target_soc_percent is not None
             else self._target_soc_override
         )
         if (
-            self._last_charge_now
+            old_charge_now
             and prev_soc is not None
             and car.soc_percent is not None
             and prev_soc < effective_target
@@ -397,7 +411,6 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 EVENT_TARGET_REACHED,
                 {"entry_id": self.entry.entry_id, "final_soc": car.soc_percent},
             )
-        self._last_charge_now = charge_now
 
     async def _async_update_data(self) -> CoordinatorData:
         now = dt_util.now()
@@ -453,7 +466,13 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         charge_now, status_label, stop_reason = self._evaluate_charge_now(
             plan, car, debounced_plugged, now
         )
-        await self._apply_charger(charge_now, stop_reason, prev_soc, car)
+        old_charge_now = self._last_charge_now
+        self._last_charge_now = charge_now
+        self.hass.async_create_task(
+            self._async_apply_charger_control(
+                charge_now, old_charge_now, stop_reason, prev_soc, car
+            )
+        )
 
         # Override the planner status if master is off or unplugged.
         if not self._master_enabled:
