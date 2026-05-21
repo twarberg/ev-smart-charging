@@ -694,7 +694,7 @@ def _spy_refresh(coordinator: Any) -> list[int]:
         calls[0] += 1
         await original()
 
-    coordinator.async_request_refresh = _counting  # type: ignore[method-assign]
+    coordinator.async_request_refresh = _counting
     return calls
 
 
@@ -922,7 +922,7 @@ async def test_external_switch_off_triggers_cancel(hass: HomeAssistant) -> None:
     entry = await _setup_with_soc(hass)
     coordinator = hass.data[DOMAIN][entry.entry_id]
     await hass.async_block_till_done()
-    assert coordinator.data.charge_now is True
+    assert coordinator.data.charge_now
     hass.states.async_set("switch.charger", "on", {})
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -933,7 +933,7 @@ async def test_external_switch_off_triggers_cancel(hass: HomeAssistant) -> None:
     hass.states.async_set("switch.charger", "off", {})
     await hass.async_block_till_done()
 
-    assert coordinator.data.charge_now is False
+    assert not coordinator.data.charge_now
     assert coordinator.data.plan_status_label == "cancelled"
     assert coordinator.data.override is not None
     assert coordinator.data.override.mode == "skip"
@@ -1004,7 +1004,7 @@ async def test_internal_turn_off_does_not_trigger_cancel(hass: HomeAssistant) ->
     entry = await _setup_with_soc(hass, soc=30.0, target=80.0)
     coordinator = hass.data[DOMAIN][entry.entry_id]
     await hass.async_block_till_done()
-    assert coordinator.data.charge_now is True
+    assert coordinator.data.charge_now
     hass.states.async_set("switch.charger", "on", {})
 
     # Bump SoC past target → coordinator intent flips OFF on next refresh,
@@ -1013,7 +1013,7 @@ async def test_internal_turn_off_does_not_trigger_cancel(hass: HomeAssistant) ->
     # False by the time the listener fires.
     hass.states.async_set("sensor.car_soc", "85")
     await hass.async_block_till_done()
-    assert coordinator.data.charge_now is False
+    assert not coordinator.data.charge_now
     hass.states.async_set("switch.charger", "off", {})
     await hass.async_block_till_done()
     assert coordinator.data.override is None
