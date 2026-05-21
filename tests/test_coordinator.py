@@ -675,37 +675,80 @@ async def _setup_for_soc_watch(hass: HomeAssistant) -> Any:
     return entry
 
 
-async def test_soc_entity_tick_above_delta_triggers_replan(hass: HomeAssistant) -> None:
-    """A SoC change ≥ SOC_REPLAN_DELTA triggers a replan via the SoC watcher."""
+def _spy_refresh(coordinator: Any) -> list[int]:
+    """Replace coordinator.async_request_refresh with a counter.
+
+    Returns a one-element list whose value is the call count so tests can
+    assert on it after awaiting.
+    """
+    calls = [0]
+    original = coordinator.async_request_refresh
+
+    async def _counting() -> None:
+        calls[0] += 1
+        await original()
+
+    coordinator.async_request_refresh = _counting  # type: ignore[method-assign]
+    return calls
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_soc_entity_tick_above_delta_triggers_replan_while_charging(
+    hass: HomeAssistant,
+) -> None:
+    """A SoC change ≥ SOC_REPLAN_DELTA triggers a replan while charging."""
     entry = await _setup_for_soc_watch(hass)
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True  # gate precondition
 
-    last_replan_before = coordinator.data.last_replan
+    calls = _spy_refresh(coordinator)
     hass.states.async_set("sensor.car_soc", "31")
     await hass.async_block_till_done()
-    assert coordinator.data.last_replan > last_replan_before
+    assert calls[0] == 1
 
 
+@freeze_time("2026-05-11 03:30:00+02:00")
 async def test_soc_entity_tick_below_delta_skipped(hass: HomeAssistant) -> None:
-    """Sub-delta SoC noise does not trigger a replan."""
+    """Sub-delta SoC noise does not trigger a replan even while charging."""
     entry = await _setup_for_soc_watch(hass)
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True
 
-    last_replan_before = coordinator.data.last_replan
+    calls = _spy_refresh(coordinator)
     hass.states.async_set("sensor.car_soc", "30.3")
     await hass.async_block_till_done()
-    assert coordinator.data.last_replan == last_replan_before
+    assert calls[0] == 0
 
 
+@freeze_time("2026-05-11 03:30:00+02:00")
 async def test_soc_entity_tick_unavailable_skipped(hass: HomeAssistant) -> None:
     """SoC going to unavailable must not trigger a replan."""
     entry = await _setup_for_soc_watch(hass)
     coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True
 
-    last_replan_before = coordinator.data.last_replan
+    calls = _spy_refresh(coordinator)
     hass.states.async_set("sensor.car_soc", "unavailable")
     await hass.async_block_till_done()
-    assert coordinator.data.last_replan == last_replan_before
+    assert calls[0] == 0
+
+
+async def test_soc_entity_tick_skipped_when_not_charging(hass: HomeAssistant) -> None:
+    """When not actively charging, SoC ticks must not trigger any replan.
+
+    Honors the prior decision in commit 0865e92 to drop SoC-driven replans
+    outside active charging.
+    """
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    # No freeze_time → real "now" is outside the seeded May 11 price window,
+    # so the plan resolves to no_data and charge_now is False.
+    assert coordinator.data.charge_now is False
+
+    calls = _spy_refresh(coordinator)
+    hass.states.async_set("sensor.car_soc", "50")  # well above delta
+    await hass.async_block_till_done()
+    assert calls[0] == 0
 
 
 @freeze_time("2026-05-11 03:30:00+02:00")

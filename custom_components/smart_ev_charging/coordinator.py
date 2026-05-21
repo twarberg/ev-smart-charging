@@ -163,6 +163,13 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     @callback
     def _handle_soc_change(self, event: Event[EventStateChangedData]) -> None:
+        # Only fire while actively charging. SoC monitoring exists to catch
+        # target-hit between heartbeats; outside charging the prior decision
+        # (commit 0865e92, "drop auto_replan_on_soc_change option") stands:
+        # the 30-min heartbeat + control-input listeners are enough, and
+        # SoC ticks must not cause replans.
+        if not self._last_charge_now:
+            return
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in UNAVAILABLE_STATES:
             return
