@@ -651,11 +651,7 @@ async def test_plan_updated_event_deduped_when_no_change(hass: HomeAssistant) ->
     ), "second refresh with no change must not fire plan_updated again"
 
 
-async def test_soc_entity_tick_does_not_trigger_replan(hass: HomeAssistant) -> None:
-    """SoC entity is never watched for replans; only heartbeat + control inputs are.
-
-    Snapshot last_replan, tick the SoC entity, confirm last_replan is unchanged.
-    """
+async def _setup_for_soc_watch(hass: HomeAssistant) -> Any:
     async_mock_service(hass, "switch", "turn_on")
     async_mock_service(hass, "switch", "turn_off")
     _seed_prices(hass)
@@ -676,10 +672,38 @@ async def test_soc_entity_tick_does_not_trigger_replan(hass: HomeAssistant) -> N
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    return entry
+
+
+async def test_soc_entity_tick_above_delta_triggers_replan(hass: HomeAssistant) -> None:
+    """A SoC change ≥ SOC_REPLAN_DELTA triggers a replan via the SoC watcher."""
+    entry = await _setup_for_soc_watch(hass)
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
     last_replan_before = coordinator.data.last_replan
     hass.states.async_set("sensor.car_soc", "31")
+    await hass.async_block_till_done()
+    assert coordinator.data.last_replan > last_replan_before
+
+
+async def test_soc_entity_tick_below_delta_skipped(hass: HomeAssistant) -> None:
+    """Sub-delta SoC noise does not trigger a replan."""
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    last_replan_before = coordinator.data.last_replan
+    hass.states.async_set("sensor.car_soc", "30.3")
+    await hass.async_block_till_done()
+    assert coordinator.data.last_replan == last_replan_before
+
+
+async def test_soc_entity_tick_unavailable_skipped(hass: HomeAssistant) -> None:
+    """SoC going to unavailable must not trigger a replan."""
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    last_replan_before = coordinator.data.last_replan
+    hass.states.async_set("sensor.car_soc", "unavailable")
     await hass.async_block_till_done()
     assert coordinator.data.last_replan == last_replan_before
 

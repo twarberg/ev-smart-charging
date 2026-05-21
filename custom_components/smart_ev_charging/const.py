@@ -48,6 +48,13 @@ DEFAULT_MIN_SOC_THRESHOLD: Final = 100
 # Heartbeat
 HEARTBEAT_MINUTES: Final = 30
 
+# Minimum SoC delta (percent) that triggers a coordinator replan from a
+# SoC entity tick. Vendor sensors can report sub-percent noise multiple
+# times per minute; gating below this keeps the plan stable while still
+# reacting to meaningful changes (in particular, target-reached during a
+# charge well before the next 30-minute heartbeat).
+SOC_REPLAN_DELTA: Final = 0.5
+
 # Sentinels for HA states that mean "no value"
 UNAVAILABLE_STATES: Final = frozenset({"unknown", "unavailable", "none", ""})
 

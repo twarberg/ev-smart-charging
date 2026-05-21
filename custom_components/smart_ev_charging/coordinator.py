@@ -50,6 +50,7 @@ from .const import (
     EVENT_STOPPED,
     EVENT_TARGET_REACHED,
     HEARTBEAT_MINUTES,
+    SOC_REPLAN_DELTA,
     UNAVAILABLE_STATES,
 )
 from .planner import Plan, PlanInput, make_plan
@@ -137,9 +138,11 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if replan_on_price:
             ids.append(self._merged.get(CONF_PRICE_ENTITY))
         # Target SoC, charging status, and departure are control inputs —
-        # changes there should always trigger a replan. SoC ticks do not —
-        # the heartbeat picks up new SoC, and replans during active charge
-        # are absorbed by the plan-freeze in _async_update_data.
+        # changes there should always trigger a replan. SoC ticks go through
+        # a separate handler with a sub-percent delta gate so that noisy
+        # vendor sensors do not refresh the coordinator several times per
+        # minute; replans during active charge are absorbed by the
+        # plan-freeze in _async_update_data.
         ids.append(self._merged.get(CONF_TARGET_SOC_ENTITY))
         ids.append(self._merged.get(CONF_CHARGING_STATUS_ENTITY))
         ids.append(self._merged.get(CONF_DEPARTURE_ENTITY))
@@ -148,9 +151,28 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             self._unsub.append(
                 async_track_state_change_event(self.hass, watch, self._handle_state_change)
             )
+        soc_id = self._merged.get(CONF_SOC_ENTITY)
+        if soc_id:
+            self._unsub.append(
+                async_track_state_change_event(self.hass, [soc_id], self._handle_soc_change)
+            )
 
     @callback
     def _handle_state_change(self, _event: Event[EventStateChangedData]) -> None:
+        self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _handle_soc_change(self, event: Event[EventStateChangedData]) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in UNAVAILABLE_STATES:
+            return
+        try:
+            new_soc = float(new_state.state)
+        except (TypeError, ValueError):
+            return
+        last = self._last_soc_known
+        if last is not None and abs(new_soc - last) < SOC_REPLAN_DELTA:
+            return
         self.hass.async_create_task(self.async_request_refresh())
 
     async def async_unload(self) -> None:
