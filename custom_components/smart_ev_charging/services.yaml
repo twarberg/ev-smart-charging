@@ -35,6 +35,17 @@ skip_until:
       selector:
         datetime:
 
+resume_plan:
+  name: Resume plan
+  description: >-
+    Clear any active force or cancel override and resume the normal charging
+    plan. Use after an external cancel (charger switch flipped off while
+    charging) when you want planning to take over before the next plug cycle.
+  target:
+    entity:
+      integration: smart_ev_charging
+  fields: {}
+
 set_one_off_departure:
   name: Set one-off departure
   description: >-

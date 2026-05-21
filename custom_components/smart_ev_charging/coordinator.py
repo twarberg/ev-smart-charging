@@ -50,6 +50,7 @@ from .const import (
     EVENT_STOPPED,
     EVENT_TARGET_REACHED,
     HEARTBEAT_MINUTES,
+    SOC_REPLAN_DELTA,
     UNAVAILABLE_STATES,
 )
 from .planner import Plan, PlanInput, make_plan
@@ -137,9 +138,11 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         if replan_on_price:
             ids.append(self._merged.get(CONF_PRICE_ENTITY))
         # Target SoC, charging status, and departure are control inputs —
-        # changes there should always trigger a replan. SoC ticks do not —
-        # the heartbeat picks up new SoC, and replans during active charge
-        # are absorbed by the plan-freeze in _async_update_data.
+        # changes there should always trigger a replan. SoC ticks go through
+        # a separate handler with a sub-percent delta gate so that noisy
+        # vendor sensors do not refresh the coordinator several times per
+        # minute; replans during active charge are absorbed by the
+        # plan-freeze in _async_update_data.
         ids.append(self._merged.get(CONF_TARGET_SOC_ENTITY))
         ids.append(self._merged.get(CONF_CHARGING_STATUS_ENTITY))
         ids.append(self._merged.get(CONF_DEPARTURE_ENTITY))
@@ -148,10 +151,64 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             self._unsub.append(
                 async_track_state_change_event(self.hass, watch, self._handle_state_change)
             )
+        soc_id = self._merged.get(CONF_SOC_ENTITY)
+        if soc_id:
+            self._unsub.append(
+                async_track_state_change_event(self.hass, [soc_id], self._handle_soc_change)
+            )
+        # Watch the physical charger switch so an external flip from on -> off
+        # while we intend to charge is treated as a user cancel.
+        charger_switch_id = self._merged.get(CONF_CHARGER_SWITCH)
+        if charger_switch_id:
+            self._unsub.append(
+                async_track_state_change_event(
+                    self.hass, [charger_switch_id], self._handle_charger_switch_change
+                )
+            )
 
     @callback
     def _handle_state_change(self, _event: Event[EventStateChangedData]) -> None:
         self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _handle_soc_change(self, event: Event[EventStateChangedData]) -> None:
+        # Only fire while actively charging. SoC monitoring exists to catch
+        # target-hit between heartbeats; outside charging the prior decision
+        # (commit 0865e92, "drop auto_replan_on_soc_change option") stands:
+        # the 30-min heartbeat + control-input listeners are enough, and
+        # SoC ticks must not cause replans.
+        if not self._last_charge_now:
+            return
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in UNAVAILABLE_STATES:
+            return
+        try:
+            new_soc = float(new_state.state)
+        except (TypeError, ValueError):
+            return
+        last = self._last_soc_known
+        if last is not None and abs(new_soc - last) < SOC_REPLAN_DELTA:
+            return
+        self.hass.async_create_task(self.async_request_refresh())
+
+    @callback
+    def _handle_charger_switch_change(self, event: Event[EventStateChangedData]) -> None:
+        """Detect an external off-flip while we intend to charge.
+
+        Treated as a user cancel: set an indefinite skip override so the
+        coordinator does not re-assert the switch via closed-loop reconcile.
+        Auto-clears on unplug (same as force override). UI / automations can
+        clear it via the resume_plan service.
+        """
+        if not self._last_charge_now:
+            return
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if old_state is None or new_state is None:
+            return
+        if old_state.state != "on" or new_state.state != "off":
+            return
+        self.apply_cancel()
 
     async def async_unload(self) -> None:
         for unsub in self._unsub:
@@ -180,9 +237,29 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self.hass.async_create_task(self.async_request_refresh())
 
     def apply_override(self, mode: Literal["force", "skip"], until: datetime | None) -> None:
-        if mode == "skip" and until is None:
-            raise ValueError("skip override requires a non-None until datetime")
         self._override = ChargeOverride(mode=mode, until=until)
+        self.hass.async_create_task(self.async_request_refresh())
+
+    def apply_cancel(self) -> None:
+        """Apply an indefinite skip override and fire user_cancel STOPPED event.
+
+        Indefinite = until=None. Auto-clears on unplug (existing logic) or via
+        the resume_plan service. Used both by the external-switch-off detector
+        and any future user-initiated cancel surface.
+        """
+        was_charging = self._last_charge_now
+        self._override = ChargeOverride(mode="skip", until=None)
+        self._last_charge_now = False
+        if was_charging:
+            self.hass.bus.async_fire(
+                EVENT_STOPPED,
+                {"entry_id": self.entry.entry_id, "reason": "user_cancel"},
+            )
+        self.hass.async_create_task(self.async_request_refresh())
+
+    def clear_override(self) -> None:
+        """Manually clear any active override and resume normal plan."""
+        self._override = None
         self.hass.async_create_task(self.async_request_refresh())
 
     def apply_one_off_departure(self, departure_time: time | None) -> None:
@@ -332,11 +409,16 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         skip_active = (
             override is not None
             and override.mode == "skip"
-            and override.until is not None
-            and now < override.until
+            and (override.until is None or now < override.until)
         )
         if skip_active:
-            return False, plan.status, "skip"
+            # until=None signals user_cancel (indefinite skip). The status
+            # label "cancelled" lets dashboards conditionally render a resume
+            # button without parsing override attributes.
+            assert override is not None  # narrowed by skip_active
+            label = "cancelled" if override.until is None else plan.status
+            reason = "user_cancel" if override.until is None else "skip"
+            return False, label, reason
 
         if not debounced_plugged:
             return False, "unplugged", "unplugged"
@@ -357,37 +439,51 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             return "force"
         return "plan"
 
-    async def _apply_charger(
+    async def _async_apply_charger_control(
         self,
         charge_now: bool,
+        old_charge_now: bool,
         stop_reason: str | None,
         prev_soc: float | None,
         car: CarState,
     ) -> None:
+        """Reconcile the physical charger switch against charge_now intent.
+
+        Reads the live switch state so closed-loop healing re-issues turn_on
+        if the switch was flipped externally. STARTED/STOPPED events fire on
+        intent transitions only (not on re-asserts) so external drift does
+        not spam the event bus.
+        """
         switch_id = self._merged[CONF_CHARGER_SWITCH]
-        if charge_now and not self._last_charge_now:
+        switch_state = self.hass.states.get(switch_id)
+        is_physically_on = switch_state is not None and switch_state.state == "on"
+
+        if charge_now and not is_physically_on:
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": switch_id}, blocking=False
             )
-            self.hass.bus.async_fire(
-                EVENT_STARTED,
-                {"entry_id": self.entry.entry_id, "reason": self._start_reason()},
-            )
-        elif not charge_now and self._last_charge_now:
+            if not old_charge_now:
+                self.hass.bus.async_fire(
+                    EVENT_STARTED,
+                    {"entry_id": self.entry.entry_id, "reason": self._start_reason()},
+                )
+        elif not charge_now and is_physically_on:
             await self.hass.services.async_call(
                 "switch", "turn_off", {"entity_id": switch_id}, blocking=False
             )
-            self.hass.bus.async_fire(
-                EVENT_STOPPED,
-                {"entry_id": self.entry.entry_id, "reason": stop_reason or "plan_end"},
-            )
+            if old_charge_now:
+                self.hass.bus.async_fire(
+                    EVENT_STOPPED,
+                    {"entry_id": self.entry.entry_id, "reason": stop_reason or "plan_end"},
+                )
+
         effective_target = (
             car.target_soc_percent
             if car.target_soc_percent is not None
             else self._target_soc_override
         )
         if (
-            self._last_charge_now
+            old_charge_now
             and prev_soc is not None
             and car.soc_percent is not None
             and prev_soc < effective_target
@@ -397,7 +493,6 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                 EVENT_TARGET_REACHED,
                 {"entry_id": self.entry.entry_id, "final_soc": car.soc_percent},
             )
-        self._last_charge_now = charge_now
 
     async def _async_update_data(self) -> CoordinatorData:
         now = dt_util.now()
@@ -453,7 +548,13 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         charge_now, status_label, stop_reason = self._evaluate_charge_now(
             plan, car, debounced_plugged, now
         )
-        await self._apply_charger(charge_now, stop_reason, prev_soc, car)
+        old_charge_now = self._last_charge_now
+        self._last_charge_now = charge_now
+        self.hass.async_create_task(
+            self._async_apply_charger_control(
+                charge_now, old_charge_now, stop_reason, prev_soc, car
+            )
+        )
 
         # Override the planner status if master is off or unplugged.
         if not self._master_enabled:

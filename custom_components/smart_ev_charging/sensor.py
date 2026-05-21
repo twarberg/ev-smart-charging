@@ -28,6 +28,7 @@ _ICONS = {
     "no_data": "mdi:database-off",
     "unplugged": "mdi:power-plug-off",
     "disabled": "mdi:cancel",
+    "cancelled": "mdi:hand-back-left",
 }
 
 

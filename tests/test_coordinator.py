@@ -21,7 +21,9 @@ from custom_components.smart_ev_charging.const import (
     CONF_START_FIELD,
     DOMAIN,
     EVENT_PLAN_UPDATED,
+    EVENT_STOPPED,
     EVENT_TARGET_REACHED,
+    SERVICE_RESUME_PLAN,
 )
 
 
@@ -297,15 +299,20 @@ async def test_target_reached_event_fires_with_target_soc_override(hass: HomeAss
 
 
 @freeze_time("2026-05-11 03:30:00+02:00")
-async def test_apply_override_skip_requires_until(hass: HomeAssistant) -> None:
-    import pytest
-
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_apply_override_skip_indefinite_marks_cancelled(hass: HomeAssistant) -> None:
+    """skip with until=None is the user_cancel state; status reports cancelled."""
     async_mock_service(hass, "switch", "turn_on")
     async_mock_service(hass, "switch", "turn_off")
     entry = await _setup_with_soc(hass)
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    with pytest.raises(ValueError, match="skip"):
-        coordinator.apply_override("skip", None)
+    coordinator.apply_override("skip", None)
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now is False
+    assert coordinator.data.plan_status_label == "cancelled"
+    assert coordinator.data.override is not None
+    assert coordinator.data.override.mode == "skip"
+    assert coordinator.data.override.until is None
 
 
 @freeze_time("2026-05-11 03:30:00+02:00")
@@ -354,7 +361,7 @@ async def test_fallback_number_created_when_no_soc(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert hass.states.get("number.daily_charge_slots_override") is not None
     assert hass.states.get("number.daily_target_soc") is not None
-    assert hass.states.get("datetime.daily_departure_fallback") is not None
+    assert hass.states.get("time.daily_departure_fallback") is not None
 
 
 @freeze_time("2026-05-11 03:30:00+02:00")
@@ -365,7 +372,7 @@ async def test_fallback_entities_skipped_when_real_entities_provided(hass: HomeA
     # soc_entity + target_soc_entity + charging_status_entity are configured; departure is not
     assert hass.states.get("number.daily_charge_slots_override") is None
     assert hass.states.get("number.daily_target_soc") is None
-    assert hass.states.get("datetime.daily_departure_fallback") is not None
+    assert hass.states.get("time.daily_departure_fallback") is not None
 
 
 async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant) -> None:
@@ -395,14 +402,20 @@ async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant)
         # Advance to 03:30 — should be in the cheapest 2-slot plan (03:00-05:00)
         frozen.move_to("2026-05-11 03:30:00+02:00")
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert coordinator.data.charge_now
         assert any(c.data.get("entity_id") == "switch.charger" for c in turn_on_calls)
+        # Mock service does not flip switch state; simulate the resulting physical
+        # state so the next reconcile reads "on" and only issues turn_off.
+        hass.states.async_set("switch.charger", "on", {})
 
         # Advance past departure — no price data beyond 08:00, so plan has no_data and charger is off
         frozen.move_to("2026-05-11 08:30:00+02:00")
         await coordinator.async_refresh()
+        await hass.async_block_till_done()
         assert not coordinator.data.charge_now
         assert any(c.data.get("entity_id") == "switch.charger" for c in turn_off_calls)
+        hass.states.async_set("switch.charger", "off", {})
 
 
 async def test_service_replan_runs(hass: HomeAssistant) -> None:
@@ -644,11 +657,7 @@ async def test_plan_updated_event_deduped_when_no_change(hass: HomeAssistant) ->
     ), "second refresh with no change must not fire plan_updated again"
 
 
-async def test_soc_entity_tick_does_not_trigger_replan(hass: HomeAssistant) -> None:
-    """SoC entity is never watched for replans; only heartbeat + control inputs are.
-
-    Snapshot last_replan, tick the SoC entity, confirm last_replan is unchanged.
-    """
+async def _setup_for_soc_watch(hass: HomeAssistant) -> Any:
     async_mock_service(hass, "switch", "turn_on")
     async_mock_service(hass, "switch", "turn_off")
     _seed_prices(hass)
@@ -669,12 +678,83 @@ async def test_soc_entity_tick_does_not_trigger_replan(hass: HomeAssistant) -> N
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    return entry
 
-    last_replan_before = coordinator.data.last_replan
+
+def _spy_refresh(coordinator: Any) -> list[int]:
+    """Replace coordinator.async_request_refresh with a counter.
+
+    Returns a one-element list whose value is the call count so tests can
+    assert on it after awaiting.
+    """
+    calls = [0]
+    original = coordinator.async_request_refresh
+
+    async def _counting() -> None:
+        calls[0] += 1
+        await original()
+
+    coordinator.async_request_refresh = _counting
+    return calls
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_soc_entity_tick_above_delta_triggers_replan_while_charging(
+    hass: HomeAssistant,
+) -> None:
+    """A SoC change ≥ SOC_REPLAN_DELTA triggers a replan while charging."""
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True  # gate precondition
+
+    calls = _spy_refresh(coordinator)
     hass.states.async_set("sensor.car_soc", "31")
     await hass.async_block_till_done()
-    assert coordinator.data.last_replan == last_replan_before
+    assert calls[0] == 1
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_soc_entity_tick_below_delta_skipped(hass: HomeAssistant) -> None:
+    """Sub-delta SoC noise does not trigger a replan even while charging."""
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True
+
+    calls = _spy_refresh(coordinator)
+    hass.states.async_set("sensor.car_soc", "30.3")
+    await hass.async_block_till_done()
+    assert calls[0] == 0
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_soc_entity_tick_unavailable_skipped(hass: HomeAssistant) -> None:
+    """SoC going to unavailable must not trigger a replan."""
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data.charge_now is True
+
+    calls = _spy_refresh(coordinator)
+    hass.states.async_set("sensor.car_soc", "unavailable")
+    await hass.async_block_till_done()
+    assert calls[0] == 0
+
+
+async def test_soc_entity_tick_skipped_when_not_charging(hass: HomeAssistant) -> None:
+    """When not actively charging, SoC ticks must not trigger any replan.
+
+    Honors the prior decision in commit 0865e92 to drop SoC-driven replans
+    outside active charging.
+    """
+    entry = await _setup_for_soc_watch(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    # No freeze_time → real "now" is outside the seeded May 11 price window,
+    # so the plan resolves to no_data and charge_now is False.
+    assert coordinator.data.charge_now is False
+
+    calls = _spy_refresh(coordinator)
+    hass.states.async_set("sensor.car_soc", "50")  # well above delta
+    await hass.async_block_till_done()
+    assert calls[0] == 0
 
 
 @freeze_time("2026-05-11 03:30:00+02:00")
@@ -829,3 +909,111 @@ async def test_soc_debouncer_releases_on_concrete_value(hass: HomeAssistant) -> 
     hass.states.async_set("sensor.car_soc", "50")
     await coordinator.async_refresh()
     assert coordinator.data.car_state.soc_percent == 50.0
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_external_switch_off_triggers_cancel(hass: HomeAssistant) -> None:
+    """External off-flip during active charge applies an indefinite skip override.
+
+    The charger is NOT re-asserted (no closed-loop self-heal in cancel mode);
+    EVENT_STOPPED fires with reason=user_cancel; plan_status_label becomes
+    'cancelled' so dashboards can surface a resume button.
+    """
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now
+    hass.states.async_set("switch.charger", "on", {})
+
+    turn_on_calls = async_mock_service(hass, "switch", "turn_on")
+    async_mock_service(hass, "switch", "turn_off")
+    stopped_events: list[Any] = []
+    hass.bus.async_listen(EVENT_STOPPED, lambda e: stopped_events.append(e))
+
+    hass.states.async_set("switch.charger", "off", {})
+    await hass.async_block_till_done()
+
+    assert not coordinator.data.charge_now
+    assert coordinator.data.plan_status_label == "cancelled"
+    assert coordinator.data.override is not None
+    assert coordinator.data.override.mode == "skip"
+    assert coordinator.data.override.until is None
+    assert turn_on_calls == [], "must not re-assert turn_on after cancel"
+    assert any(e.data.get("reason") == "user_cancel" for e in stopped_events)
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_cancel_persists_across_refresh(hass: HomeAssistant) -> None:
+    """Once cancelled, a normal refresh must not re-enable charging."""
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.async_block_till_done()
+    hass.states.async_set("switch.charger", "on", {})
+    hass.states.async_set("switch.charger", "off", {})
+    await hass.async_block_till_done()
+    assert coordinator.data.plan_status_label == "cancelled"
+
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now is False
+    assert coordinator.data.plan_status_label == "cancelled"
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_cancel_auto_clears_on_unplug(hass: HomeAssistant) -> None:
+    """Cancel override clears on unplug (same auto-clear path as force)."""
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.async_block_till_done()
+    hass.states.async_set("switch.charger", "on", {})
+    hass.states.async_set("switch.charger", "off", {})
+    await hass.async_block_till_done()
+    assert coordinator.data.override is not None
+
+    hass.states.async_set("sensor.car_status", "3")  # unplugged
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.data.override is None
+    assert coordinator.data.debounced_plugged_in is False
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_resume_plan_service_clears_cancel(hass: HomeAssistant) -> None:
+    """The resume_plan service clears any active override."""
+    entry = await _setup_with_soc(hass)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.async_block_till_done()
+    hass.states.async_set("switch.charger", "on", {})
+    hass.states.async_set("switch.charger", "off", {})
+    await hass.async_block_till_done()
+    assert coordinator.data.override is not None
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_RESUME_PLAN,
+        {"entity_id": "sensor.daily_plan_status"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert coordinator.data.override is None
+
+
+@freeze_time("2026-05-11 03:30:00+02:00")
+async def test_internal_turn_off_does_not_trigger_cancel(hass: HomeAssistant) -> None:
+    """When the coordinator itself turns off (target reached), no cancel fires."""
+    entry = await _setup_with_soc(hass, soc=30.0, target=80.0)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await hass.async_block_till_done()
+    assert coordinator.data.charge_now
+    hass.states.async_set("switch.charger", "on", {})
+
+    # Bump SoC past target → coordinator intent flips OFF on next refresh,
+    # reconciler issues turn_off, switch state goes off. Listener must NOT
+    # interpret that as a user cancel because _last_charge_now is already
+    # False by the time the listener fires.
+    hass.states.async_set("sensor.car_soc", "85")
+    await hass.async_block_till_done()
+    assert not coordinator.data.charge_now
+    hass.states.async_set("switch.charger", "off", {})
+    await hass.async_block_till_done()
+    assert coordinator.data.override is None
