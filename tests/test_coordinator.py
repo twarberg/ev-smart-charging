@@ -354,7 +354,7 @@ async def test_fallback_number_created_when_no_soc(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert hass.states.get("number.daily_charge_slots_override") is not None
     assert hass.states.get("number.daily_target_soc") is not None
-    assert hass.states.get("datetime.daily_departure_fallback") is not None
+    assert hass.states.get("time.daily_departure_fallback") is not None
 
 
 @freeze_time("2026-05-11 03:30:00+02:00")
@@ -365,7 +365,7 @@ async def test_fallback_entities_skipped_when_real_entities_provided(hass: HomeA
     # soc_entity + target_soc_entity + charging_status_entity are configured; departure is not
     assert hass.states.get("number.daily_charge_slots_override") is None
     assert hass.states.get("number.daily_target_soc") is None
-    assert hass.states.get("datetime.daily_departure_fallback") is not None
+    assert hass.states.get("time.daily_departure_fallback") is not None
 
 
 async def test_e2e_plan_drives_charger_across_planned_hours(hass: HomeAssistant) -> None:

@@ -1,17 +1,16 @@
-"""Conditional fallback departure datetime."""
+"""Conditional fallback departure time."""
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime, time
+from datetime import time
 
-from homeassistant.components.datetime import DateTimeEntity
+from homeassistant.components.time import TimeEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DEFAULT_DEPARTURE,
@@ -22,8 +21,8 @@ from .const import (
 from .coordinator import SmartEVCoordinator
 
 
-class DepartureFallbackDateTime(
-    CoordinatorEntity[SmartEVCoordinator], DateTimeEntity, RestoreEntity
+class DepartureFallbackTime(
+    CoordinatorEntity[SmartEVCoordinator], TimeEntity, RestoreEntity
 ):
     _attr_has_entity_name = True
     _attr_translation_key = "departure_fallback"
@@ -36,8 +35,7 @@ class DepartureFallbackDateTime(
         parts = default_time.split(":")
         h = int(parts[0])
         m = int(parts[1]) if len(parts) > 1 else 0
-        today = dt_util.now().replace(hour=h, minute=m, second=0, microsecond=0)
-        self._value: datetime = today
+        self._value: time = time(h, m)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -49,7 +47,7 @@ class DepartureFallbackDateTime(
         )
 
     @property
-    def native_value(self) -> datetime:
+    def native_value(self) -> time:
         return self._value
 
     async def async_added_to_hass(self) -> None:
@@ -57,12 +55,12 @@ class DepartureFallbackDateTime(
         last = await self.async_get_last_state()
         if last is not None:
             with contextlib.suppress(TypeError, ValueError):
-                self._value = datetime.fromisoformat(last.state)
-            self.coordinator.set_departure_fallback(time(self._value.hour, self._value.minute))
+                self._value = time.fromisoformat(last.state)
+            self.coordinator.set_departure_fallback(self._value)
 
-    async def async_set_value(self, value: datetime) -> None:
+    async def async_set_value(self, value: time) -> None:
         self._value = value
-        self.coordinator.set_departure_fallback(time(value.hour, value.minute))
+        self.coordinator.set_departure_fallback(value)
         self.async_write_ha_state()
 
 
@@ -74,4 +72,4 @@ async def async_setup_entry(
     coordinator: SmartEVCoordinator = hass.data[DOMAIN][entry.entry_id]
     merged = {**entry.data, **entry.options}
     if not merged.get(CONF_DEPARTURE_ENTITY):
-        async_add_entities([DepartureFallbackDateTime(coordinator)])
+        async_add_entities([DepartureFallbackTime(coordinator)])

@@ -5,7 +5,7 @@ from typing import Final
 
 DOMAIN: Final = "smart_ev_charging"
 
-PLATFORMS: Final = ["sensor", "binary_sensor", "switch", "number", "datetime"]
+PLATFORMS: Final = ["sensor", "binary_sensor", "switch", "number", "time"]
 
 # Config keys
 CONF_NAME: Final = "name"

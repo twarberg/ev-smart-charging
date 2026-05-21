@@ -157,7 +157,7 @@
       "target_soc": {"name": "Target SoC"},
       "charge_slots_override": {"name": "Charge slots override"}
     },
-    "datetime": {
+    "time": {
       "departure_fallback": {"name": "Departure (fallback)"}
     }
   }
