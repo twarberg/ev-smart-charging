@@ -129,6 +129,10 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         # (departure_time, deadline_at_apply_time) — auto-clears when now >= deadline.
         self._one_off_departure: tuple[time, datetime] | None = None
         self._last_charge_now: bool = False
+        # True until _async_update_data has run at least once. Used by the
+        # HA-restart resume guard so the very first refresh can detect a
+        # mid-charge restart without inspecting the base-class data attribute.
+        self._first_refresh_pending: bool = True
 
     async def async_setup(self) -> None:
         replan_on_price = bool(
@@ -503,6 +507,22 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
         car = read_car_state(self.hass, self._car_config)  # type: ignore[arg-type]
         car = self._debounce_car_levels(car)
         debounced_plugged = self._debounce_plug(car)
+        # HA-restart-mid-charge resume: coordinator state is volatile, so a
+        # restart clears _last_charge_now even when the physical charger is
+        # still on. Without this guard, the fresh plan computed below may not
+        # include the current hour, and the reconcile step in
+        # _async_apply_charger_control would issue turn_off mid-block.
+        resumed_session = False
+        if (
+            self._first_refresh_pending
+            and debounced_plugged
+            and not self._last_charge_now
+        ):
+            switch_id = self._merged[CONF_CHARGER_SWITCH]
+            switch_state = self.hass.states.get(switch_id)
+            if switch_state is not None and switch_state.state == "on":
+                resumed_session = True
+                self._last_charge_now = True
         # Freeze plan mid-charge: as SoC rises, _slots_needed shrinks and the
         # planner would relocate the chosen block to a later (cheaper) slot,
         # dropping the current hour and pausing the charger mid-block.
@@ -537,6 +557,23 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     contiguous=contiguous_block,
                 )
             )
+            # Resume splice: if the in-progress hour is missing from the fresh
+            # plan, prepend it so charge_now resolves True on this tick and
+            # freeze_plan adopts the spliced plan from the next tick onward.
+            if resumed_session:
+                this_hour = now.replace(minute=0, second=0, microsecond=0)
+                if this_hour not in plan.selected_starts:
+                    current_price: float | None = None
+                    for slot in prices:
+                        if slot.start == this_hour:
+                            current_price = slot.price
+                            break
+                    if current_price is not None:
+                        plan = replace(
+                            plan,
+                            selected_starts=(this_hour, *plan.selected_starts),
+                            selected_prices=(current_price, *plan.selected_prices),
+                        )
 
         # Spec § 5.8: clear any active override the moment the car is unplugged.
         # Done before _evaluate_charge_now so the force-override branch can't fire
@@ -649,4 +686,5 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     "was_extended": plan.was_extended,
                 },
             )
+        self._first_refresh_pending = False
         return data

@@ -826,6 +826,61 @@ async def test_plan_frozen_during_active_charge_does_not_drop_current_hour(
     assert coordinator.data.charge_now is True
 
 
+@freeze_time("2026-05-11 05:30:00+02:00")
+async def test_ha_restart_mid_charge_does_not_interrupt(hass: HomeAssistant) -> None:
+    """HA-restart-mid-charge resume: cold start with charger physically on must
+    keep the charge running. Coordinator volatile state (_last_charge_now,
+    self.data) is wiped, but the physical switch was ``on`` at restart. The
+    fresh plan computed at first refresh would otherwise exclude the current
+    hour (cheapest 2 hours among the remaining window are 06:00+07:00), and
+    the reconcile step would fire turn_off mid-block.
+    """
+    turn_on_calls = async_mock_service(hass, "switch", "turn_on")
+    turn_off_calls = async_mock_service(hass, "switch", "turn_off")
+    hass.states.async_set(
+        "sensor.fake_prices",
+        "1.00",
+        {
+            "unit_of_measurement": "DKK/kWh",
+            "prices": [
+                {"start": "2026-05-11T05:00:00+02:00", "end": "2026-05-11T06:00:00+02:00", "price": 1.50},
+                {"start": "2026-05-11T06:00:00+02:00", "end": "2026-05-11T07:00:00+02:00", "price": 0.80},
+                {"start": "2026-05-11T07:00:00+02:00", "end": "2026-05-11T08:00:00+02:00", "price": 0.70},
+            ],
+        },
+    )
+    # Charger physically on at startup — the restart-resume signal.
+    hass.states.async_set("switch.charger", "on", {})
+    hass.states.async_set("sensor.car_soc", "60")
+    hass.states.async_set("sensor.car_target", "100")
+    hass.states.async_set("sensor.car_status", "0")
+    data = _base_entry_data()
+    data["soc_entity"] = "sensor.car_soc"
+    data["target_soc_entity"] = "sensor.car_target"
+    data["charging_status_entity"] = "sensor.car_status"
+    data["plug_unplugged_values"] = ["3"]
+    data["actively_charging_values"] = ["0"]
+    data[CONF_CONTIGUOUS_BLOCK] = True
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Current hour (05:00 local) must remain in the plan and charge_now must
+    # hold. Compare as datetimes — equality is tz-aware, so the slot may be
+    # represented in any equivalent tz.
+    expected_this_hour = dt_util.now().replace(minute=0, second=0, microsecond=0)
+    assert expected_this_hour in coordinator.data.plan.selected_starts, (
+        f"resume splice missing: {coordinator.data.plan.selected_starts}"
+    )
+    assert coordinator.data.charge_now is True
+    # No turn_off issued — charger is already on, intent matches.
+    assert not any(c.data.get("entity_id") == "switch.charger" for c in turn_off_calls)
+    # No turn_on either — reconcile sees charger already on.
+    assert not any(c.data.get("entity_id") == "switch.charger" for c in turn_on_calls)
+
+
 @freeze_time("2026-05-11 02:30:00+02:00")
 async def test_contiguous_block_default_on_picks_contiguous(
     hass: HomeAssistant,
