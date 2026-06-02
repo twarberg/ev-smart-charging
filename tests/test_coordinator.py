@@ -637,6 +637,23 @@ async def test_effective_departure_uses_initial_deadline_and_default_source(
     assert coordinator.data.effective_departure_source == "default"
 
 
+async def test_malformed_default_departure_falls_back(hass: HomeAssistant) -> None:
+    """A malformed CONF_DEFAULT_DEPARTURE must not crash; it falls back to 08:00."""
+    _seed_prices(hass)
+    data = _base_entry_data()
+    data[CONF_DEFAULT_DEPARTURE] = "not-a-time"
+    entry = MockConfigEntry(domain=DOMAIN, title="Daily", data=data)
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data is not None
+    assert coordinator.data.effective_departure_time == "08:00"
+    assert coordinator.data.effective_departure_source == "default"
+
+
 @freeze_time("2026-05-11 03:30:00+02:00")
 async def test_plan_updated_event_deduped_when_no_change(hass: HomeAssistant) -> None:
     """Heartbeat or noop refresh shouldn't fire plan_updated again with the same payload."""

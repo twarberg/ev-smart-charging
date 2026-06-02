@@ -59,6 +59,16 @@ from .price_source import PriceSource
 _LOGGER = logging.getLogger(__name__)
 
 
+def _parse_hhmm(txt: str) -> time | None:
+    """Parse "HH:MM" / "HH:MM:SS" into a time, or None when malformed."""
+    parts = txt.split(":")
+    try:
+        return time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+    except (ValueError, IndexError):
+        _LOGGER.warning("Invalid departure time %r; falling back to default", txt)
+        return None
+
+
 @dataclass
 class ChargeOverride:
     mode: Literal["force", "skip"]
@@ -285,16 +295,20 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             self._one_off_departure = (departure_time, deadline)
         self.hass.async_create_task(self.async_request_refresh())
 
+    def _effective_target(self, car: CarState) -> float:
+        """Target SoC %: the car's own target when reported, else the user override."""
+        return (
+            car.target_soc_percent
+            if car.target_soc_percent is not None
+            else self._target_soc_override
+        )
+
     def _kwh_needed(self, car: CarState) -> float | None:
         """Unbuffered kWh required to reach target SoC, or None when SoC unknown."""
         soc = car.soc_percent
         if soc is None:
             return None
-        target = (
-            car.target_soc_percent
-            if car.target_soc_percent is not None
-            else self._target_soc_override
-        )
+        target = self._effective_target(car)
         if soc >= target:
             return 0.0
         battery_kwh = float(self._merged.get(CONF_BATTERY_KWH, DEFAULT_BATTERY_KWH))
@@ -302,11 +316,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     def _slots_needed(self, car: CarState) -> int:
         soc = car.soc_percent
-        target = (
-            car.target_soc_percent
-            if car.target_soc_percent is not None
-            else self._target_soc_override
-        )
+        target = self._effective_target(car)
         charger_kw = float(self._merged.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW))
         if soc is None:
             return self._slots_override
@@ -317,6 +327,9 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             return 0
         if soc >= target:
             return 0
+        # Headroom on the raw estimate: the charge curve tapers as the pack fills,
+        # so wall-to-battery throughput drops near the top. 5% is enough below 80%;
+        # past 80% the taper is steeper, so reserve a wider 10% margin.
         buffer = 1.05 if target <= 80 else 1.10
         kwh_needed = self._kwh_needed(car) or 0.0
         hours_raw = kwh_needed / charger_kw * buffer
@@ -335,8 +348,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
             source = "helper"
         if time_part is None:
             txt = str(self._merged.get(CONF_DEFAULT_DEPARTURE, DEFAULT_DEPARTURE_TIME))
-            parts = txt.split(":")
-            time_part = time(int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+            time_part = _parse_hhmm(txt) or _parse_hhmm(DEFAULT_DEPARTURE_TIME) or time(8, 0)
         today = now.replace(
             hour=time_part.hour, minute=time_part.minute, second=0, microsecond=0
         )
@@ -481,11 +493,7 @@ class SmartEVCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     {"entry_id": self.entry.entry_id, "reason": stop_reason or "plan_end"},
                 )
 
-        effective_target = (
-            car.target_soc_percent
-            if car.target_soc_percent is not None
-            else self._target_soc_override
-        )
+        effective_target = self._effective_target(car)
         if (
             old_charge_now
             and prev_soc is not None
