@@ -36,6 +36,7 @@ async def test_plan_status_sensor_exposes_discovery_hints(hass: HomeAssistant) -
     # Four discovery hints
     assert attrs["source_price_entity"] == "sensor.fake_prices"
     assert attrs["charger_kw"] == 11.0
+    assert attrs["charger_switch_entity"] == "switch.charger"
     assert attrs["soc_entity"] == "sensor.test_soc"
     assert attrs["target_soc_entity"] == "number.test_target_soc"
 
