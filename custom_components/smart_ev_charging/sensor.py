@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_CHARGER_KW,
+    CONF_CHARGER_SWITCH,
     CONF_PRICE_ENTITY,
     CONF_SOC_ENTITY,
     CONF_TARGET_SOC_ENTITY,
@@ -69,6 +70,7 @@ class PlanStatusSensor(_Base):
             "override_mode": ov.mode if ov else None,
             "override_until": ov.until.isoformat() if ov and ov.until else None,
             "source_price_entity": cfg.get(CONF_PRICE_ENTITY),
+            "charger_switch_entity": cfg.get(CONF_CHARGER_SWITCH),
             "charger_kw": float(cfg.get(CONF_CHARGER_KW, DEFAULT_CHARGER_KW)),
             "soc_entity": cfg.get(CONF_SOC_ENTITY),
             "target_soc_entity": cfg.get(CONF_TARGET_SOC_ENTITY),
